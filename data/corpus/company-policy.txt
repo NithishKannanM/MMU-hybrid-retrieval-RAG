@@ -1,0 +1,157 @@
+NORTHWIND ANALYTICS GMBH
+INTERNAL POLICY IP-014: PERSONAL DATA BREACH AND SECURITY INCIDENT RESPONSE
+
+Document owner: Office of the Data Protection Officer
+Version: 4.2
+Effective date: 1 March 2024
+Review cycle: annual
+Classification: Internal — all staff, all contractors, all processors acting on our
+instructions
+
+--------------------------------------------------------------------------------
+1. PURPOSE AND SCOPE
+--------------------------------------------------------------------------------
+
+1.1 This policy sets out how Northwind Analytics GmbH detects, escalates, assesses and
+reports a personal data breach or security incident. It applies to every employee,
+contractor, intern and temporary worker, and to every third party that processes
+personal data on our behalf under a written processing agreement.
+
+1.2 This policy is an internal control. It sits on top of, and never in place of, the
+obligations imposed on us by applicable data protection law. Where the law imposes a
+requirement this policy does not mention, the legal requirement applies in full. Where
+this policy imposes a requirement stricter than the law, this policy applies. Staff must
+not treat compliance with this policy as establishing compliance with the law, nor treat
+a legal minimum as permission to relax an internal deadline set out here.
+
+1.3 Nothing in this policy authorises any member of staff to decide, on their own
+judgement, that an incident does not need to be reported internally. That assessment is
+reserved to the Data Protection Officer under section 4.
+
+--------------------------------------------------------------------------------
+2. DEFINITIONS
+--------------------------------------------------------------------------------
+
+2.1 "Security incident" means any event that compromises, or that there is reasonable
+cause to believe may have compromised, the confidentiality, integrity or availability of
+information held by or on behalf of Northwind Analytics GmbH, whether or not personal
+data is known to be involved.
+
+2.2 "Personal data breach" means a security incident that leads to the accidental or
+unlawful destruction, loss, alteration, unauthorised disclosure of, or access to,
+personal data.
+
+2.3 "Detection" means the first moment at which any member of staff, or any processor
+acting on our behalf, becomes aware of facts indicating a security incident. Detection is
+not the moment the incident is confirmed, classified, or understood. A suspicion is a
+detection.
+
+2.4 "The Data Protection Officer" means the individual appointed under section 3.1,
+acting personally or through a formally designated deputy recorded in the incident
+register.
+
+--------------------------------------------------------------------------------
+3. ROLES AND OWNERSHIP
+--------------------------------------------------------------------------------
+
+3.1 The company appoints a Data Protection Officer. The appointment, the contact details
+and the name of the standing deputy are published on the intranet and are reviewed
+annually by the Management Board.
+
+3.2 The Data Protection Officer owns every external notification arising from a personal
+data breach. No other function may make an external report, and no other function may
+authorise one. This includes Legal, Security Operations, Communications, Sales, and any
+member of the Management Board. The reservation is deliberate and absolute: a single
+owner is the only way the company can guarantee that what is said externally is
+consistent, complete, and made within the deadline that applies to it.
+
+3.3 The Data Protection Officer determines the recipient of any external report, the
+contents of that report, and its timing, by reference to the external authority
+designated by the national law applicable to the affected processing. Staff must not
+attempt to identify the recipient themselves, and must not contact any external body
+about an incident, including to make a preliminary or informal enquiry.
+
+3.4 Security Operations owns technical containment and forensic preservation. Legal owns
+contractual notification to customers and processors. Communications owns all public and
+press statements, which may not be issued before the Data Protection Officer has
+confirmed in writing that an external report has been made or is not required.
+
+3.5 Where a processor acting on our behalf detects an incident, the processor must notify
+the Office of the Data Protection Officer directly. A processor must not notify any
+external body on our behalf, and must not wait for its own internal investigation to
+conclude before notifying us.
+
+--------------------------------------------------------------------------------
+4. INTERNAL ESCALATION — THE FOUR-HOUR RULE
+--------------------------------------------------------------------------------
+
+4.1 Any member of staff who detects a security incident must escalate it to the Office of
+the Data Protection Officer within four hours of detection. This is the single most
+important operational requirement in this policy.
+
+4.2 The four hours run from detection as defined in section 2.3, not from confirmation,
+not from classification, and not from the start of the next business day. The four-hour
+clock runs continuously, including outside business hours, at weekends and on public
+holidays. The Office of the Data Protection Officer maintains a duty rota and an
+out-of-hours escalation number for exactly this reason.
+
+4.3 Staff must escalate within four hours even where the facts are incomplete, even where
+the incident may turn out to be a false alarm, and even where it is not yet known whether
+personal data is involved at all. An escalation containing only the facts known at the
+time is compliant. A delayed escalation containing complete facts is not.
+
+4.4 The four-hour internal deadline is an internal control set by this company. It is
+deliberately and substantially shorter than any external reporting deadline imposed by
+law. The margin is not spare time and must not be treated as such: it is the working
+window in which the Data Protection Officer assesses severity, establishes the categories
+and approximate number of affected data subjects, coordinates containment with Security
+Operations, and prepares an external report that is accurate at the moment it is filed.
+Consuming that margin internally is what causes an external deadline to be missed.
+
+4.5 Failure to escalate within four hours is a disciplinary matter, irrespective of
+whether the incident is ultimately assessed as a reportable personal data breach and
+irrespective of whether any external deadline was in fact missed.
+
+--------------------------------------------------------------------------------
+5. ASSESSMENT
+--------------------------------------------------------------------------------
+
+5.1 On receiving an escalation, the Data Protection Officer opens an entry in the
+incident register, assigns a reference, and records the detection time reported by the
+escalating member of staff.
+
+5.2 The Data Protection Officer assesses whether the security incident constitutes a
+personal data breach and, if so, whether it gives rise to an external reporting
+obligation, by reference to the statutory tests and deadlines applicable to the
+processing concerned. That assessment, including the reasoning where the conclusion is
+that no external report is required, is recorded in the incident register.
+
+5.3 The incident register records every security incident escalated under section 4,
+including those assessed as not constituting a personal data breach and those assessed as
+not externally reportable. The register is retained for five years and is made available
+to the Management Board quarterly and to an external authority on request.
+
+--------------------------------------------------------------------------------
+6. COMMUNICATION TO AFFECTED INDIVIDUALS
+--------------------------------------------------------------------------------
+
+6.1 Where the Data Protection Officer determines that affected individuals must be
+informed, the notice is drafted by the Office of the Data Protection Officer and reviewed
+by Legal before issue.
+
+6.2 The notice describes the nature of the breach in plain language, the likely
+consequences, the measures taken or proposed, and the contact point for further
+information. It must not minimise, must not speculate about cause, and must not assign
+blame to a named individual.
+
+--------------------------------------------------------------------------------
+7. EXCEPTIONS
+--------------------------------------------------------------------------------
+
+7.1 There is no exception to the four-hour escalation requirement in section 4.1. No
+manager, director or board member may waive it, extend it, or instruct a member of staff
+to delay an escalation for any reason, including pending legal review, pending customer
+communication, or pending confirmation that personal data is involved.
+
+7.2 Any instruction to delay an escalation must itself be escalated to the Data
+Protection Officer within four hours.

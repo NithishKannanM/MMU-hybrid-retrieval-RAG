@@ -1,0 +1,89 @@
+[project]
+name = "mmu"
+version = "0.1.0"
+description = "MMU (Modular Memory Unit) — hybrid-retrieval RAG, benchmarked on legal/compliance documents"
+readme = "README.md"
+authors = [{ name = "NithishKannanM", email = "kannanreddy116@gmail.com" }]
+requires-python = ">=3.14"
+
+dependencies = [
+    # --- retrieval core ---
+    "numpy>=2.3",
+    # cp314 wheels exist from 1.12.0; 1.14.3 is the version already proven running under
+    # python3.14 in the sibling local_infra venv. Below 1.12 uv finds no wheel and falls
+    # back to a source build that needs swig + BLAS.
+    "faiss-cpu>=1.14.3",
+    "rank-bm25>=0.2.2",       # pure-python BM25Okapi; the only maintained release.
+
+    # --- embedding (BGE-M3) ---
+    # LOAD-BEARING FLOOR: cp314 wheels start at torch 2.9.0. Any lower bound and uv will
+    # try to compile torch from source on this interpreter. The default PyPI linux wheel
+    # bundles CUDA (~2.5GB); the commented [tool.uv.sources] block below is the CPU-only swap.
+    "torch>=2.9",
+    # Dense head only. FlagEmbedding was rejected: it pulls the whole training stack
+    # (datasets, accelerate, peft, ir-datasets) to do inference and declares no
+    # requires-python, i.e. nobody has vetted it for 3.14. See embed/base.py for the
+    # cost of that choice and the path back if the sparse/ColBERT heads are ever needed.
+    "sentence-transformers>=5.0",
+
+    # --- eval ---
+    # The deterministic offline judge's only dependency. Never a reported quality number
+    # on its own — it measures lexical overlap, not entailment. See eval/judge.py.
+    "rapidfuzz>=3.14",
+
+    # --- serving ---
+    "fastapi>=0.115",
+    # [standard] pulls httptools + uvloop. SSE is unusable under the pure-python loop at
+    # any real concurrency.
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.28",            # the Ollama client AND the test transport. One HTTP library.
+
+    # --- ingest ---
+    # PDF/txt/md only. python-docx is deliberately absent: docx is a two-line addition to
+    # ingest/reader.py's dispatch if it is ever wanted, and lxml is not a free import.
+    "pypdf>=6.0",
+
+    # --- config ---
+    "pydantic>=2.9",
+    "pydantic-settings>=2.15",
+]
+
+[project.optional-dependencies]
+# Not installed by `uv sync` and not importable unless chosen. There is no ANTHROPIC_API_KEY
+# in this environment, and the default path must never pull an SDK nobody opted into.
+anthropic = ["anthropic>=1.7"]
+
+[project.scripts]
+mmu = "mmu.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]   # tracks the installed uv line (0.12.1)
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+# The default run downloads NOTHING and makes no network call. `-m live` opts into the
+# gates that need a real model.
+addopts = "-ra -m 'not live'"
+markers = [
+    "live: needs a real model — BGE-M3 (~2.3GB) and/or a pulled Ollama model",
+]
+
+# --- CPU-only torch (commented, not the default) ------------------------------------
+# Saves ~2GB of CUDA payload. Not default: the box has an RTX 3050, and while
+# MMU_EMBED_DEVICE defaults to "cpu" (config.py says why), someone indexing a larger
+# corpus should be able to flip it to "cuda" without reinstalling torch.
+# [[tool.uv.index]]
+# name = "pytorch-cpu"
+# url = "https://download.pytorch.org/whl/cpu"
+# explicit = true
+# [tool.uv.sources]
+# torch = { index = "pytorch-cpu" }

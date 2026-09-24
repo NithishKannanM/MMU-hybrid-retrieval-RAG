@@ -1,0 +1,895 @@
+================================================================================
+MMU — LEARNING NOTES
+Understanding the Modular Memory Unit from the ground up
+================================================================================
+
+Written alongside building the project. Every claim here points at real code in
+this repo, so you can read the concept and then read the thing itself.
+
+Contents:
+  PART 1 — The spine: what RAG is and why this architecture
+  PART 2 — Embeddings and vector search, from the inside
+  PART 3 — Walking a real query through the code
+  PART 4 — The systems engineering                      [to come]
+
+
+================================================================================
+PART 1 — THE SPINE
+================================================================================
+
+--------------------------------------------------------------------------------
+1.1  The problem RAG solves
+--------------------------------------------------------------------------------
+
+An LLM has frozen weights and a context window. Two ways to give it knowledge it
+does not have:
+
+  * Retrain / fine-tune it — expensive, slow, and it STILL invents specifics.
+    Worse, you get no citations. For legal work that is fatal: "the deadline is
+    72 hours" is worthless if you cannot point at Article 33.
+
+  * Put the facts in the prompt — cheap, instant, and the answer can cite its
+    sources.
+
+RAG is the second one, industrialized: RETRIEVE the relevant passages, AUGMENT
+the prompt with them, let the model GENERATE an answer from them.
+
+The critical consequence, and the reason this project is 80% retrieval code:
+
+    The model can only be as grounded as the text you hand it.
+
+If retrieval misses the national law, no amount of prompt engineering recovers
+it. Garbage in, confident garbage out.
+
+
+--------------------------------------------------------------------------------
+1.2  Embeddings — how a computer gets "meaning"
+--------------------------------------------------------------------------------
+
+An embedding model turns text into a list of numbers (BGE-M3: 1024 of them)
+positioned so that similar meanings land near each other in that
+1024-dimensional space.
+
+"Near" = cosine similarity, the angle between two vectors. And here is a trick
+worth internalizing: if you force every vector to length 1, then cosine
+similarity IS just the dot product. Cheap.
+
+That is precisely why src/mmu/retrieve/dense.py refuses vectors that are not
+unit-length — FAISS's IndexFlatIP computes inner product, and only on unit
+vectors does that mean cosine. Feed it unnormalized vectors and nothing errors;
+long chunks just quietly win every query.
+
+Seen live with the deterministic test embedder:
+
+    query: "data controller notify"
+      "the data controller must notify"  -> 0.77   same words, close
+      "the processor must notify"        -> 0.25   some overlap
+      "unrelated cooking recipe"         -> 0.005  nothing
+
+
+--------------------------------------------------------------------------------
+1.3  Why dense retrieval alone is not enough
+--------------------------------------------------------------------------------
+
+This is the insight the whole architecture is built on.
+
+Embeddings COMPRESS. 1024 numbers cannot preserve every distinction in a
+paragraph, so the model keeps what it was trained to think matters — and it was
+trained on general web text, where "controller" and "processor" are near
+synonyms.
+
+In GDPR they are LEGAL OPPOSITES. The controller decides why data is processed
+and carries the liability; the processor just follows instructions.
+
+  *** MEASURED, NOT ASSUMED — see section 2.6. ***
+
+  Running the real BGE-M3 against this exact trap, dense retrieval got every
+  case RIGHT. The claim "dense will hand you the wrong one" is TOO STRONG for
+  this model on this corpus, and it is worth knowing that rather than repeating
+  a tidy story.
+
+  What is true is subtler and more useful: dense separated a legally-opposite
+  pair by as little as 0.027 cosine, on a scale where an unrelated chunk about
+  bean stew sat at 0.40. Correct, and one paraphrase away from wrong. BM25
+  separated the same pair by 0.89 — about 33x the margin.
+
+  So the compression mechanism is real, but its consequence is FRAGILITY rather
+  than outright error.
+
+
+--------------------------------------------------------------------------------
+1.4  BM25 — the dumb channel that saves you
+--------------------------------------------------------------------------------
+
+BM25 does not know what words mean. It counts them:
+
+  * term frequency        — this chunk says "controller" 5 times
+  * inverse document freq — "controller" is rare across the corpus, so it is
+                            informative; "the" is everywhere, so it is worthless
+  * length normalization  — a long chunk should not win just by being longer
+
+Because it is blind to meaning, it CANNOT blur "controller" into "processor".
+Its failure mode is the exact complement of the dense channel's: it misses
+paraphrase ("how fast must we report a leak?" will not match "notification of a
+personal data breach"), but it never confuses a defined term.
+
+Two retrievers, opposite blind spots. That is hybrid retrieval.
+
+And the honest version of why it helps: on this corpus hybrid did not RESCUE a
+wrong answer — it HARDENED a fragile right one. See section 2.6.
+
+Everything BM25 is FOR lives in what counts as a word, which is why
+src/mmu/retrieve/sparse.py's tokenize() is a tested pure function rather than a
+throwaway lambda. "data-controller" must stay one token, or it splits into the
+two words it is defined AGAINST.
+
+A measured caveat discovered while building: BM25Okapi assigns IDF exactly 0.0
+to a term occurring in half or more of the corpus, so such a term scores 0
+everywhere and contributes nothing. This channel indexes CHUNKS, not documents,
+so N is in the hundreds and ordinary defined terms stay well under the
+threshold — but a genuinely ubiquitous word can cross it.
+
+
+--------------------------------------------------------------------------------
+1.5  RRF — combining two rankings that do not speak the same language
+--------------------------------------------------------------------------------
+
+Now you have two ranked lists. Merge them how?
+
+The naive move — add the scores — is broken. Cosine lives in [-1, 1]. BM25 is
+unbounded and its scale shifts with your corpus. Adding 0.82 to 14.3 is
+meaningless. You could normalize first, but every normalization scheme is a new
+tuning knob and a new bug (min-max is wrecked by outliers; z-score assumes a
+distribution BM25 does not have).
+
+Reciprocal Rank Fusion throws the scores away and keeps only the POSITION:
+
+    score(d) = SUM over retrievers of  1 / (k + rank_of_d_in_that_retriever)
+
+With k=60, a document at rank 1 contributes 1/61 ~= 0.0164; at rank 2,
+1/62 ~= 0.0161. Barely different — and that is deliberate. The gap between
+adjacent ranks is small, so BEING FOUND BY BOTH CHANNELS BEATS BEING FOUND
+BRILLIANTLY BY ONE:
+
+    found by both at rank 1:        1/61 + 1/61 = 0.0328   <- wins
+    found by dense only at rank 1:  1/61        = 0.0164
+
+That is the union effect, and it is the whole point.
+src/mmu/core/fusion.py is the implementation — 12 lines, no dependencies.
+
+TRAP: a document missing from a channel must contribute EXACTLY ZERO. An earlier
+version in the sibling local_infra project gave absent docs a sentinel rank of
+n+1, which hands everything a floor score from every channel and compresses
+precisely the signal you are trying to create.
+tests/test_fusion.py::test_absent_id_contributes_exactly_zero exists to stop
+that coming back.
+
+
+--------------------------------------------------------------------------------
+1.6  The rest of the pipeline, briefly
+--------------------------------------------------------------------------------
+
+CHUNKING (src/mmu/ingest/splitter.py)
+    You cannot embed a 40-page PDF as one vector; it would average into mush,
+    and you would waste the context window retrieving it. So you split into
+    ~384-token pieces with overlap, because a clause can straddle a boundary.
+    Chunks are stored as CHARACTER OFFSETS into the original text, which makes
+        chunk.text == source[char_start:char_end]
+    a testable invariant and lets a citation point at real source.
+
+THE GROUNDING CONTRACT (src/mmu/generate/prompt.py)
+    The prompt numbers the sources [S1]...[S8] and orders the model to cite.
+    This is the sharpest engineering trick in the project: it converts "did the
+    model actually use the national law?" from a fuzzy semantic judgment into
+
+        re.findall(r'\[S(\d+)\]', answer)
+
+    Three of the five metrics become deterministic because of it.
+
+EVALUATION
+    The genuinely hard part, and where most RAG projects are dishonest. From
+    outside, these failures look identical:
+        - retrieval missed the document
+        - retrieval found it but the model ignored it
+        - the model used it but reasoned wrong
+        - the model made it up
+    The five metrics exist to tell them apart — which is why the report prints
+    XDR as four separate columns instead of one number.
+
+
+================================================================================
+PART 2 — EMBEDDINGS AND VECTOR SEARCH, FROM THE INSIDE
+================================================================================
+
+--------------------------------------------------------------------------------
+2.1  How text becomes one vector
+--------------------------------------------------------------------------------
+
+Four stages:
+
+1. TOKENIZATION. BGE-M3 uses XLM-RoBERTa's SentencePiece tokenizer, ~250k
+   vocabulary, multilingual. "data controller" might become
+   ["_data", "_controll", "er"]. Subword pieces mean no word is ever
+   out-of-vocabulary — it just fragments into smaller pieces.
+
+2. TRANSFORMER LAYERS. Each token starts as a lookup-table vector, then passes
+   through 24 layers of self-attention. The crucial output property: token
+   vectors are CONTEXTUAL. "Controller" in "the controller determines the
+   purposes of processing" gets a materially different vector than "controller"
+   in "the game controller vibrated". This is the whole advance over word2vec,
+   where "controller" had exactly one vector forever.
+
+3. POOLING. You now have ~N token vectors but need one. BGE-M3 takes the [CLS]
+   token's final hidden state — a position the model was trained to use as a
+   summary of the whole sequence.
+
+4. NORMALIZATION. Scale to length 1, so dot product = cosine.
+
+
+--------------------------------------------------------------------------------
+2.2  The three heads — why BGE-M3 specifically
+--------------------------------------------------------------------------------
+
+A normal hybrid stack needs THREE separate models: a dense encoder, a
+learned-sparse model like SPLADE, and a ColBERT late-interaction model. Three
+sets of weights to serve, version, and hold in VRAM.
+
+BGE-M3 produces all three from ONE forward pass, because they are three
+different read-outs of the same hidden states:
+
+  DENSE    [CLS] -> 1024 floats
+           1 vector per chunk
+
+  SPARSE   a linear layer scores each token's importance -> weights over
+           vocabulary. A LEARNED BM25.
+
+  COLBERT  keep ALL token vectors, score by MaxSim (each query token finds its
+           best-matching doc token; sum those maxima)
+           ~N_tokens x 1024 floats per chunk
+
+ColBERT is dramatically more precise — it can match "72 hours" in the query
+against "72 hours" in the doc AT THE TOKEN LEVEL rather than hoping a single
+averaged vector preserved it. It is also ~100x the storage.
+
+THE HONEST PART ABOUT THIS PROJECT: MMU uses only the dense head.
+sentence-transformers does not expose the other two — those are extra linear
+layers only FlagEmbedding loads. So the "one model, three representations"
+argument is the REASON THE MODEL IS A GOOD FIT, but two-thirds of it is
+currently unrealized.
+
+src/mmu/embed/base.py records this, and the Encoding dataclass already has
+`sparse` and `colbert` fields sitting at None so wiring them later is one new
+class, not a refactor.
+
+If anyone asks "why BGE-M3 then, if you only use dense?" — the honest answer is:
+it is a strong multilingual dense encoder with an 8192 window, and it leaves the
+door open. NOT "because it does three things", since right now it does not.
+
+
+--------------------------------------------------------------------------------
+2.3  Vector search: what IndexFlatIP actually does
+--------------------------------------------------------------------------------
+
+Brute force, and nothing more:
+
+    scores = Q @ V.T        # (1, 1024) x (1024, N) -> (1, N)
+    top_k  = argsort(-scores)[:k]
+
+One matrix multiply, handed to BLAS. Cost is O(N*d).
+
+    N = 500 chunks x 1024 dims -> 512k multiply-adds -> MICROSECONDS
+    N = 1,000,000              -> 10^9 ops           -> ~100ms+, now it dominates
+
+That crossover is the entire scaling story.
+
+
+--------------------------------------------------------------------------------
+2.4  The approximate alternatives, and what they cost you
+--------------------------------------------------------------------------------
+
+HNSW  Builds a multi-layer graph where each vector links to ~M neighbours, with
+      sparse long-range links on upper layers. Search greedily walks toward the
+      query. Roughly logarithmic, no training step, ~95-98% recall@10. Costs
+      memory for the graph.
+
+IVF   k-means the space into `nlist` cells; at query time search only the
+      `nprobe` nearest cells. Needs a train() pass over a sample first. Recall
+      is a direct function of nprobe.
+
+Both are APPROXIMATE: they will sometimes miss a true nearest neighbour.
+
+And that is exactly why MMU does not use them. Not because flat is fast enough
+(though it is) — because the point of this project is to MEASURE RETRIEVAL
+DESIGN. If the index silently drops 3% of true neighbours, then every Context
+Precision number carries an unmeasured ANN penalty baked in, and you are
+measuring your index instead of your architecture. The ablation between
+dense-only, sparse-only and hybrid would be contaminated by a variable nobody is
+tracking.
+
+src/mmu/retrieve/dense.py's _make_index() is the one line that changes when you
+do need to scale, and the module docstring names the parameters.
+
+
+--------------------------------------------------------------------------------
+2.5  The gotcha worth burning in
+--------------------------------------------------------------------------------
+
+FAISS gives you IndexFlatIP (inner product) and IndexFlatL2 (Euclidean).
+For UNIT-LENGTH vectors:
+
+    L2^2 = 2 - 2*cosine     ->  same ranking, inverted
+    IP   = cosine           ->  same ranking
+
+They are interchangeable. For NON-UNIT vectors, IP ranks by MAGNITUDE — so your
+longest chunks win every single query, retrieval is mysteriously bad, and
+NOTHING RAISES AN ERROR.
+
+That is why dense.py asserts the norm on add() instead of trusting the embedder
+to have done it.
+
+
+================================================================================
+APPENDIX — BUGS FOUND BY ACTUALLY RUNNING THINGS
+================================================================================
+
+Worth studying, because each one is a class of mistake rather than a typo.
+
+1. CORPUS CONTEXT PRECISION WAS CAPPED AT 0.833
+   An "unanswerable" question has no relevant document set, so Context Precision
+   is UNDEFINED for it — but it was being scored 0.0 and averaged in. With one
+   such question in six, a PERFECT retriever could never score above 5/6.
+   Lesson: an aggregate must exclude the undefined, not coerce it to zero.
+
+2. httpx.ASGITransport DOES NOT RUN LIFESPAN EVENTS
+   Every API test hit a half-initialized app and got 503s that looked like real
+   failures. Fixed with a helper that enters app.router.lifespan_context.
+   Lesson: a test harness that skips startup is testing a different program.
+
+3. THE SHIPPED DEFAULTS TRIPPED THEIR OWN GUARD
+   k=8 x 512 tokens x 1.3 ~= 5300 tokens against a 4096 context window. Reduced
+   chunk_max_tokens to 384 rather than cutting k, because cross-document
+   reasoning needs multiple DOCUMENTS present in context.
+   Lesson: defaults must satisfy the constraints the code itself asserts.
+
+4. BM25Okapi IDF HITS EXACTLY ZERO AT N/2
+   Documented with a test rather than left to be rediscovered.
+
+5. THE CITATION-THEATER GAP WAS MISLEADING UNDER --judge local
+   LocalJudge never emits spans, so "verified spans" is structurally zero and
+   the gap is just CUR_cited. It now renders "[n/a: local judge emits no spans]".
+   Lesson: a metric that is structurally zero must say so, or it reads as a
+   finding about the model.
+
+
+--------------------------------------------------------------------------------
+2.6  THE DEMO THAT CORRECTED THE LESSON
+--------------------------------------------------------------------------------
+
+Real BAAI/bge-m3, real BM25Okapi, six chunks, three queries. Chunks 0 and 1 are
+near-identical in sentence shape and opposite in legal meaning.
+
+RESULT: dense picked correctly on all three queries. The dramatic version of the
+story ("dense confuses controller and processor") did not reproduce.
+
+The margins are where the real finding is:
+
+    query                                   dense      BM25      ratio
+    ------------------------------------------------------------------
+    "obligations of the data processor?"   +0.0273   +0.8913      33x
+    "who is the data controller...?"       +0.1304   +0.1378     ~1x
+    "data processor documented instr."     +0.1457   +4.0446      28x
+
+0.0273 cosine of separation between a chunk and its legal opposite is not
+comfort. An unrelated chunk about bean stew scored 0.40 on that same query.
+
+And the third query shows what fusion actually buys:
+
+    SPARSE (BM25Okapi)
+      1. [PROCESSOR ] 4.0446    <- and NOTHING else scored at all
+         (every other chunk contained no query term -> score 0 -> dropped)
+
+    HYBRID (RRF, k=60)
+      1. [PROCESSOR ] 0.03279  (dense#1 + sparse#1)   CORRECT
+      2. [CONTROLLER] 0.01613  (dense#2 only)         legal opposite
+
+PROCESSOR collected from both channels: 1/61 + 1/61 = 0.0328.
+CONTROLLER collected from dense alone:  1/62         = 0.0161.
+
+Dense's 0.146 margin became a 2x gap in the fused ranking.
+
+THE CORRECTED LESSON
+    Hybrid retrieval here is NOT rescuing wrong answers. It is HARDENING
+    fragile right ones — converting a near coin-flip into a decisive
+    separation.
+
+    That is a smaller claim than the tidy one, and it is the one the data
+    supports. Which is exactly why this project ships an eval harness instead
+    of an argument: you do not get to ASSERT that hybrid helps, you run
+    `make ablate` on your real corpus and find out. If dense-only matches
+    hybrid on Context Precision, the honest move is to drop BM25 and halve the
+    complexity.
+
+    Reproduce it:  uv run python scripts/why_hybrid.py
+    (needs BGE-M3 downloaded; ~30s on CPU once cached)
+
+
+================================================================================
+PART 3 — WALKING A REAL QUERY THROUGH THE CODE
+================================================================================
+
+Following one request all the way down and back:
+
+    POST /answer/stream
+    {"query": "If we suffer a breach in Germany, who do we notify and by when?",
+     "k": 8}
+
+The data changes shape seven times. That is the thing to watch.
+
+  text --> 1024 floats --> row ints --> fused row ints --> Chunk objects
+                                                              |
+       tokens <-- HTTP frames <-- numbered [S1..S8] prompt <--+
+
+
+--------------------------------------------------------------------------------
+STAGE 1 — Validation            src/mmu/api/schemas.py
+--------------------------------------------------------------------------------
+FastAPI parses JSON into AnswerRequest before your code runs. k bounded 1..50,
+channels must be dense|sparse, temperature defaults to 0.0. A bad request dies
+here with a 422 and never touches the retriever.
+
+Detail with a security reason: `generator` is an ALIAS ("default"/"fast"), never
+a model id. A client must not be able to name a cloud model and route around the
+configured local default.
+
+
+--------------------------------------------------------------------------------
+STAGE 2 — Resolving subsystems  src/mmu/api/deps.py:59
+--------------------------------------------------------------------------------
+get_retriever pulls app.state.retriever, built by the lifespan at startup. If the
+index failed to load this raises 503 WITH THE REASON rather than 500-ing on a
+missing attribute. "no index loaded, run `mmu index build`" is something a client
+can render; "server error" is not.
+
+
+--------------------------------------------------------------------------------
+STAGE 3 — THE BOUNDARY          src/mmu/api/deps.py:81
+--------------------------------------------------------------------------------
+The single most important line in the serving layer:
+
+    async with _slots():
+        return await asyncio.to_thread(retriever.search, query, k=k, ...)
+
+Everything above this line runs on the event loop. Everything below runs on a
+worker thread. The handler stays a coroutine, so it yields control here and the
+EVENT LOOP IS FREE to accept other requests while retrieval grinds.
+
+The semaphore (deps.py:44) is a SEPARATE concern from to_thread, and people
+conflate them constantly:
+    to_thread  keeps the loop RESPONSIVE
+    semaphore  bounds PARALLELISM
+Without the semaphore, 200 in-flight requests become 200 queued thread tasks
+fighting over the same cores.
+
+
+--------------------------------------------------------------------------------
+STAGE 4 — Inside search(), on a worker thread   src/mmu/retrieve/hybrid.py:64
+--------------------------------------------------------------------------------
+Note this is a PLAIN def. That is load-bearing: tests/test_offload.py asserts it
+is not a coroutine function, because if someone "modernizes" it to async def, the
+to_thread above silently stops being an offload and nothing errors.
+
+4a. ENCODE THE QUERY                                        hybrid.py:93
+
+    vector = self._embedder.encode([query], kind="query").dense[0]
+
+kind="query" is mandatory with no default. Inside (bge_m3.py:72) it resolves
+policy_for("BAAI/bge-m3"), which returns EMPTY prefixes — deliberately, since
+BGE-M3 takes no retrieval instruction. This is the ONE place in the codebase
+that encodes with kind="query"; retrieve/build.py is the one place that uses
+"document". Those two call sites are the entire asymmetry surface.
+
+    -> your text is now 1024 floats, unit length. ~40ms on CPU, the LARGEST of
+       the three blocking calls and the one the original spec forgot to list.
+
+4b. DENSE SCAN                                              dense.py:91
+
+    scores, rows = self._index.search(q, min(k, self.size))
+
+One BLAS matrix multiply against every stored vector. Exact, no approximation.
+Returns [(row, score), ...] — POSITIONS, NOT IDS.
+Depth is max(4k, 20) = 32, not 8: over-fetch, because fusing two lists already
+cut to final size is nearly a no-op.
+
+4c. BM25                                                    sparse.py:82
+Tokenizes the query, scores every chunk, drops anything scoring exactly 0.0.
+Same row space as dense — which is why fusion needs no tagging or offsetting.
+
+4d. FUSE                                                    fusion.py:53
+
+    scores[item] = scores.get(item, 0.0) + weight / (k + rank + 1)
+
+Two lists of row-ints in, one dict of row -> score out. Absent row contributes
+nothing.
+
+4e. PROVENANCE                                              hybrid.py:114-128
+
+    dense_at   = {row: i + 1 for i, row in enumerate(dense_rows)}
+    first_seen = {row: i for i, row in enumerate([*dense_rows, *sparse_rows])}
+    ordered    = sorted(scores, key=lambda r: (-scores[r], first_seen[r]))[:k]
+
+Tiebreak by first appearance keeps ordering deterministic. Each row then becomes
+a RetrievedChunk carrying dense_rank and sparse_rank — ROWS BECOME OBJECTS
+AGAIN, and you can now see which channel found what.
+
+
+--------------------------------------------------------------------------------
+STAGE 5 — Back on the event loop     src/mmu/api/routes_answer.py:126
+--------------------------------------------------------------------------------
+    yield _sse("retrieval", {"chunks": ..., "timings": ..., "model": ...})
+
+The sources go out BEFORE generation starts. First-token latency necessarily
+includes all of retrieval, so this gives the client something real to render
+during the gap — and makes the retrieve/generate split visible on the wire.
+
+
+--------------------------------------------------------------------------------
+STAGE 6 — The prompt                 src/mmu/generate/prompt.py:67
+--------------------------------------------------------------------------------
+    [S1] (gdpr, p.12)
+    In the case of a personal data breach, the controller shall...
+
+    [S2] (national-law, p.3)
+    The competent supervisory authority is...
+
+The marker is the 1-BASED POSITION IN THE LIST, not chunk.rank (prompt.py:71).
+They coincide normally, but making sequence position authoritative means
+resolve_citations can index straight back into the same list without trusting
+any caller to have preserved rank metadata.
+
+This numbering is what converts "did it use the national law?" into a regex.
+
+
+--------------------------------------------------------------------------------
+STAGE 7 — Streaming                  src/mmu/generate/ollama.py:116 (buffer :162)
+--------------------------------------------------------------------------------
+    buffer = ""
+    async for text in resp.aiter_text():
+        buffer += text
+        lines  = buffer.split("\n")
+        buffer = lines.pop()      # last element: "" or an incomplete line
+
+Ollama emits newline-delimited JSON, and TCP chunks split wherever they like —
+routinely mid-line. Splitting each chunk in isolation either drops half a token
+or hands json.loads a truncated object. The carry-over buffer is the fix, and it
+is the most common bug in hand-rolled Ollama clients.
+
+Each parsed delta becomes yield _sse("token", ...) at routes_answer.py:143.
+
+
+--------------------------------------------------------------------------------
+STAGE 8 — Closing out                src/mmu/api/routes_answer.py:156
+--------------------------------------------------------------------------------
+resolve_citations regexes [Sn] out of the assembled text, DROPS OUT-OF-RANGE
+markers (a model WILL invent [S12] given 8 sources), and maps each to its chunk.
+Then usage -> done.
+
+If the generator dies mid-stream you get `error` instead — and NEVER a fallback
+to another model. Once tokens are on screen, switching models splices two
+systems' output into one answer.
+
+
+--------------------------------------------------------------------------------
+THE SAME OBJECTS, IN THE EVAL PATH
+--------------------------------------------------------------------------------
+eval/runner.py calls retriever.search through asyncio.to_thread directly — no
+HTTP. It gets the identical RetrievedChunk list, which is why the metrics can be
+developed and tested against fakes: they consume retrieval output as DATA, and
+src/mmu/eval/ imports no retriever and no generator anywhere.
+
+
+================================================================================
+2.7  THE SECOND DEMO — WHAT RRF ACTUALLY BUYS, MEASURED ON THE REAL CORPUS
+================================================================================
+(22 Sep 2026. Run against the built index: 378 chunks — gdpr 271, national-law
+100, company-policy 7. k=8, depth=32, rrf_k=60, dense+sparse.)
+
+§2.6 corrected the claim that dense retrieval gets controller/processor WRONG.
+It does not. This section corrects a second, subtler story I was tempted by:
+that hybrid works because "BM25 finds what dense missed."
+
+WHAT I WENT LOOKING FOR
+Across all 6 questions x k=8 = 48 context slots, I logged each chunk's
+dense_rank and sparse_rank. Result: 48/48 were found by BOTH channels.
+Zero dense-only, zero sparse-only.
+
+That number is an ARTIFACT, not a finding. depth = max(4k,20) = 32, and 32 of
+378 chunks is 8.5% of the corpus. Two rankings each netting 8.5% of a tiny
+corpus overlap almost by construction. On a 10^5-chunk corpus it collapses.
+Lesson: before reporting a ratio, ask what its denominator was doing.
+
+WHAT THE REAL SIGNAL WAS: RANK MOVEMENT, NOT MEMBERSHIP
+15 of the 48 slots (31%) hold chunks whose DENSE rank was worse than 8 — i.e.
+context that dense-only at k=8 would not have retrieved at all.
+
+But the finding that actually justifies the architecture is single-002
+("What distinguishes a data controller from a data processor?"). The chunk
+containing the literal answer — "determines the purposes" — sits at:
+
+    dense_rank = 12        sparse_rank = 12        fused rank = 6
+
+NEITHER CHANNEL'S OWN TOP-8 CONTAINS IT. Hybrid put it in the context.
+
+This is RRF doing the one thing neither channel can do alone. Work the
+arithmetic (k=60, weights 1.0):
+
+    a chunk both channels rank ~12th:  1/(60+12) + 1/(60+12) = 0.02778
+    a chunk one channel ranks 1st,
+      the other never returns:         1/(60+1)  + 0         = 0.01639
+
+Consensus across two MEDIOCRE rankings outscores one channel's confident
+favourite by 69%. Agreement is evidence. That is the whole thesis of rank fusion, and
+here it is paying for itself on a real legal corpus.
+
+AND THIS IS EXACTLY WHY THE n+1 SENTINEL WAS REJECTED (see core/fusion.py)
+local_infra/exmem/retrieval.py gives an absent document a floor score by
+assigning it rank n+1. Do that here (depth=32, so the sentinel rank is 33) and
+the second line becomes:
+
+    1/(60+1) + 1/(60+33) = 0.02715   vs consensus 0.02778
+
+The margin collapses from 69% to 2.3%. The two cases become very nearly
+indistinguishable — and it is a margin of 2.3% that would have had to survive
+tie-breaking and weighting to put single-002's answer in the context window.
+The n+1 sentinel would have destroyed precisely the signal that retrieved it.
+(I first wrote 0.0246 here from memory and had to correct it by running the
+arithmetic. Run the numbers; do not eyeball them.)
+Our rrf_fuse gives an absent id EXACTLY ZERO. test_fusion.py asserts it.
+
+THE CAVEAT THAT KEEPS THE STORY HONEST
+BM25 promotes noise too, and the 31% figure counts it. For that same
+single-002 query, BM25's #1 hit is a recital about supervisory authorities
+cooperating — it repeats "controller" and "processor" often enough to win on
+term frequency while being definitionally useless. It rode from dense rank 23
+to fused rank 5, taking a slot in the context window.
+
+So: "promoted" is not "good". Hybrid raised both the answer and a plausible
+distractor. What separates them afterwards is not retrieval — it is the
+generator's ability to ignore the distractor, which is what Answer Faithfulness
+and CUR are there to measure.
+
+RETRIEVAL-SIDE SCORECARD FOR THIS CORPUS
+    Cov (required docs in context)        1.000  on all 3 XDR questions
+    Context Precision                     0.811  (n=5; unanswerable excluded)
+    answer text present in context        6 of 6 questions
+
+company-policy is 7 chunks of 378 — 1.9% of the corpus — and it reached the
+top-8 on all three cross-document questions. A needle that small surfacing
+three times is the retrieval design working, not luck.
+
+READ single-001's CP = 0.417 CORRECTLY. Its question says "supervisory
+authority", so retrieval pulled national-law and company-policy chunks. The
+seed labels only gdpr relevant, so CP scores those as misses. They are
+defensible retrievals punished by a strict label — a LABELLING artifact, not a
+retrieval fault. Do not "fix" it by loosening the label; the label is what
+makes CP mean anything.
+
+
+================================================================================
+PART 4 — THE SYSTEMS ENGINEERING: ASYNC, THREADS, AND THE GIL
+================================================================================
+This is the part you already have the instincts for. What is new is not
+concurrency — it is WHICH of these calls blocks, and why the fix for one kind of
+blocking is the exact wrong fix for the other.
+
+
+4.1  What "blocking the event loop" actually costs
+--------------------------------------------------------------------------------
+A FastAPI process is ONE thread running ONE event loop. `async def` handlers are
+coroutines that cooperatively yield at every `await`. There is no preemption. If
+a coroutine runs 800ms of pure Python/C without awaiting, nothing else in the
+process runs for 800ms — not another request, not a health check, not the
+keepalive.
+
+So the failure mode of blocking the loop is NOT "this endpoint is slow". It is:
+
+    one slow query  ->  EVERY concurrent request stalls behind it
+                    ->  GET /health stops answering
+                    ->  the load balancer marks the process dead
+                    ->  it reads as "the server is down"
+
+That is what makes this bug expensive: the symptom points away from the cause.
+There is no error message, no traceback, no log line. You go looking at the
+health check and the real defect is in the retriever.
+
+
+4.2  Three blocking calls, one sync function
+--------------------------------------------------------------------------------
+`HybridRetriever.search` is a plain `def` — NOT `async def` — and it deliberately
+holds all three CPU-bound calls:
+
+    query encode   torch forward pass through BGE-M3   ~30-80ms on CPU
+    dense search   FAISS IndexFlatIP, a BLAS matmul    O(n*d)
+    sparse search  BM25Okapi.get_scores, numpy         O(vocab)
+
+The spec this project came from discussed offloading FAISS and BM25 and did not
+mention the encode. The encode is the LARGEST of the three. Keeping all three
+inside one sync function means the offload covers all of them BY CONSTRUCTION —
+you cannot later add a fourth blocking call and forget to wrap it, because
+everything inside `search` is already on the far side of the boundary.
+
+
+4.3  asyncio.to_thread, and why the GIL does not ruin it
+--------------------------------------------------------------------------------
+`src/mmu/api/deps.py` is the ENTIRE async/sync boundary. One call site:
+
+    async with _slots():
+        return await asyncio.to_thread(retriever.search, query, k=k, ...)
+
+`to_thread` hands the function to the default ThreadPoolExecutor and awaits the
+future. The loop is free the instant the thread starts.
+
+The obvious objection: Python has a GIL, so threads do not run in parallel —
+haven't we just moved the block? No, and the reason is specific:
+
+    numpy, FAISS and torch RELEASE the GIL around their heavy C sections.
+
+A BLAS matmul is not executing Python bytecode. It drops the GIL, runs native
+code on the CPU, and reacquires it to return. So N worker threads doing FAISS
+scans genuinely run on N cores. This is exactly the case threads are still good
+for in Python, and it is why the fix works here but would NOT work for a
+CPU-bound pure-Python loop (which would round-robin on one core and gain
+nothing but overhead).
+
+Rule of thumb worth keeping:
+    blocking C that releases the GIL   -> to_thread WORKS (this project)
+    blocking pure Python               -> to_thread does not help; use a process
+    blocking network I/O               -> to_thread is WRONG; see 4.5
+
+
+4.4  The semaphore is not redundant with to_thread
+--------------------------------------------------------------------------------
+This is the subtle one, and it is a real trap.
+
+`to_thread` keeps the loop RESPONSIVE. It does NOT bound CONCURRENCY. Those are
+different properties. With to_thread alone, 200 in-flight requests become 200
+queued thread tasks all contending for the same cores. Worse: the default
+executor's queue is UNBOUNDED, so the failure does not arrive as backpressure
+(a client timing out, a 503) — it arrives as memory growth, which is a far
+worse way to find out.
+
+    _SLOTS = asyncio.Semaphore(settings.search_concurrency)   # default cpu_count
+
+Two details that matter more than they look:
+
+  * It is created ONCE PER PROCESS, in the lifespan (`deps.init_slots`). A
+    Semaphore constructed per request bounds precisely nothing — every request
+    would get its own fresh permit. This is an easy and completely silent bug.
+  * It must be created INSIDE the running loop, which is why it lives in the
+    lifespan rather than at module import.
+
+On THIS machine `os.cpu_count()` is 20, so the default is 20 permits. Note what
+that means for `test_offload.py`: with only 8 concurrent requests the semaphore
+NEVER ENGAGES — `to_thread` alone carries that test. The semaphore does nothing
+at 8 and everything at 200. That is why deps.py argues for it on thrashing and
+unbounded-queue grounds rather than on latency: there is no small-scale
+measurement that would justify it, and it is still required.
+
+
+4.5  Generation is deliberately NOT offloaded — the inversion
+--------------------------------------------------------------------------------
+Both generator backends are `httpx.AsyncClient` calls. Ollama and Anthropic are
+both HTTP. That is network I/O, which the event loop already waits on for free
+using epoll.
+
+Wrapping async network I/O in `to_thread` is the exact INVERSION of this fix: it
+burns a whole worker thread to sit on a socket that the loop was already waiting
+on at zero cost. You take something correct and make it expensive.
+
+    CPU-bound C     ->  offload it       (retrieval)
+    async I/O       ->  leave it alone   (generation)
+
+The thing to internalise: "await" does not mean "fast", and "offload" does not
+mean "good". The question is always "does this call give the loop back?"
+
+
+4.6  SSE is NOT the fix for blocking — it is a different problem
+--------------------------------------------------------------------------------
+Easy to conflate, since both are about "the server feels stuck".
+
+    POST /answer/stream  streams tokens as they are generated.
+
+That is TOKEN-LEVEL UX. A 10-30s local generation over 8 legal chunks is
+indistinguishable from a hang if you send nothing until it finishes. Streaming
+fixes the user's perception of one request.
+
+It does NOTHING for the blocking problem. By the time the first byte is written,
+retrieval has ALREADY COMPLETED — the `retrieval` SSE event fires first,
+carrying the citations, precisely because first-token latency necessarily
+includes full retrieval. The blocking fix lives in deps.py and has already run.
+
+One endpoint can be streaming beautifully while the loop is pinned and every
+other request in the process is frozen. Different problem, different fix.
+
+(This is also why the route handler could not simply be a plain `def` and left to
+Starlette's threadpool: that works for POST /search, but /answer/stream MUST be
+a coroutine because it returns an async generator. The offload would then
+silently not apply to the endpoint that needs it most.)
+
+
+4.7  How test_offload.py proves it BEHAVIOURALLY
+--------------------------------------------------------------------------------
+This is the part worth stealing for other projects.
+
+The naive test is structural: assert `"asyncio.to_thread" in inspect.getsource(...)`.
+That test is worthless. It passes if someone moves the call somewhere useless,
+and it fails on a correct refactor. It asserts the SHAPE of the code, not the
+PROPERTY the code exists to provide.
+
+The real test asserts the property, with a fake whose `search` calls
+`time.sleep(0.2)` — `time.sleep`, NOT `asyncio.sleep`, because it must block a
+REAL thread the way a torch forward pass does. `asyncio.sleep` would yield to
+the loop and the test would pass even with the offload deleted.
+
+    8 concurrent POST /search, each blocking 0.2s
+    serial bound          = 8 x 0.2 = 1.6s
+    assertion             < 1.6 * 0.75 = 1.2s
+
+The margin is deliberately generous: the point is the difference between ~0.3s
+and ~1.6s, not a precise speedup on a machine whose core count the test does not
+control.
+
+Second test, the property that actually matters: fire a slow search, then hit
+`/health` mid-flight and assert it answers in under 0.1s. That is the literal
+production symptom — "one slow query must not make the process look dead".
+
+Third, a structural guard that IS worth having, as a complement rather than a
+substitute:
+
+    assert not inspect.iscoroutinefunction(HybridRetriever.search)
+
+If someone "modernises" `search` to `async def`, `to_thread` silently stops
+being an offload — it would await a coroutine object on the loop — and the block
+returns with no test failing. The behavioural tests catch the symptom; this one
+catches the cause, and names it in the failure message.
+
+
+4.8  THE BUG THIS PROJECT ACTUALLY SHIPPED (22 Sep 2026)
+--------------------------------------------------------------------------------
+Worth recording because it is the most useful thing that happened all day.
+
+`test_offload.py::test_search_without_an_index_is_503_not_500` passed for the
+entire build, then failed the moment `data/.index` first existed.
+
+Cause: `create_app(retriever=None)` does NOT mean "there is no retriever". The
+lifespan reads it as "not injected — BUILD one from disk":
+
+    if app.state.retriever is None:
+        app.state.retriever = _build_retriever(settings)
+
+So the test was asserting an ENVIRONMENT CONDITION (this machine has no index),
+not a behaviour. It was green for weeks while testing nothing.
+
+It gets worse: on any machine that DID have an index, that test silently loaded
+BGE-M3 — 2.3GB — inside a suite whose entire design goal is "the default run
+downloads nothing". The invariant was being violated by the very tests meant to
+be fake-only.
+
+The fix: point `MMU_DATA_DIR` at an empty `tmp_path` so the build fails for a
+REAL, controlled reason. Plus a trap underneath it — `get_settings()` is
+`@lru_cache(maxsize=1)` and `mmu/api/app.py` runs `app = create_app()` at MODULE
+IMPORT TIME, permanently caching Settings from the real data dir. So
+`monkeypatch.setenv` alone is silently ignored; the test must also call
+`get_settings.cache_clear()` before and after.
+
+    before:  1 failed, 225 passed  in 12.41s
+    after:   226 passed            in  0.93s     <- 13x faster, 0 model loads
+
+THE PATTERN, which is the lesson:
+Three separate defects surfaced today and all three were the same shape —
+"it passed because the world was empty". The offload test, the API test, and
+`unanswerable-001` (only unanswerable while the corpus lacked Article 83).
+A green suite and a clean eval both meant "nothing is here yet". Populating
+data/ is what made the project true enough to break.
+
+Ask of any passing test: WOULD THIS STILL PASS IF THE SYSTEM WERE FULLY
+POPULATED? If you cannot answer, the test is asserting your environment.
