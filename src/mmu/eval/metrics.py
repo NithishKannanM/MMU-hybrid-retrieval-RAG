@@ -171,6 +171,129 @@ def context_precision(
     return running_sum / total_relevant
 
 
+# ------------------------------------------- 2b. Rank-aware retrieval metrics (reranking)
+
+
+@dataclass(frozen=True)
+class RankMetrics:
+    """Recall@k, MRR and NDCG@k over one question's retrieved context.
+
+    These exist because :func:`context_precision` cannot see a reranker. CP normalises
+    over the relevant chunks it *retrieved*, so it answers "of what I found, how well
+    was it ordered" — and ``coverage`` is worse still for this purpose: it is a set
+    intersection over ``doc_id``, so reordering the same k chunks cannot move it at all.
+    A reranker reorders a fixed candidate pool. Measuring one needs metrics whose
+    denominator is the relevant set in the **corpus**, not in the retrieved slice.
+
+    ``recall`` and ``ndcg`` are ``None`` when :attr:`n_relevant_total` is unknown or
+    zero, following the ``cp=None`` convention: an undefined ratio is reported as
+    undefined, never as ``0.0``. A question with no relevant set at all (an unanswerable
+    one) therefore yields all-``None`` and drops out of the corpus averages instead of
+    dragging them down — the same bug that was fixed twice already in ``AF`` and
+    ``marker_compliance``.
+
+    **``recall`` is not comparable across questions, and is not meant to be.** Where a
+    ``relevant_doc_ids`` entry has no ``must_contain`` spans, every chunk of that
+    document counts as relevant, so the denominator can be in the hundreds and recall@8
+    is bounded near zero by construction. That is fine and deliberate: the reranker
+    experiment is *paired*, so the same question's denominator appears on both sides of
+    every comparison and cancels. Averaging recall across questions is the operation
+    this field does not support; :func:`paired_sign_test` over per-question deltas is
+    the one it does.
+    """
+
+    k: int
+    n_relevant_retrieved: int
+    n_relevant_total: int | None
+    first_relevant_rank: int | None   # 1-based, None if nothing relevant was retrieved
+    mrr: float
+    recall: float | None
+    ndcg: float | None
+
+
+def count_relevant_chunks(
+    corpus: Sequence[tuple[str, str]],
+    *,
+    relevant_doc_ids: Collection[str],
+    must_contain: Mapping[str, Sequence[str]] | None = None,
+) -> int:
+    """Count relevant chunks in a whole corpus, as ``(doc_id, text)`` pairs.
+
+    This is recall's and NDCG's denominator, and it has to be computed over every chunk
+    in the index rather than the retrieved ones — which is exactly why it is a separate
+    function taking the corpus explicitly. The alternative, letting a metric quietly
+    fall back to the retrieved count, would make recall@k report 1.0 whenever retrieval
+    found anything at all, for every arm, forever.
+    """
+    must_contain = must_contain or {}
+    return sum(
+        1
+        for doc_id, text in corpus
+        if _chunk_is_relevant(doc_id, text, relevant_doc_ids, must_contain)
+    )
+
+
+def rank_metrics(
+    chunks: Sequence[RetrievedChunk],
+    *,
+    relevant_doc_ids: Collection[str],
+    must_contain: Mapping[str, Sequence[str]] | None = None,
+    k: int | None = None,
+    n_relevant_total: int | None = None,
+) -> RankMetrics:
+    """Rank-aware retrieval quality over the first ``k`` chunks of ``chunks``.
+
+    ``k`` defaults to ``len(chunks)``. Passing a smaller ``k`` than was retrieved is the
+    point of the reranker experiment: it answers "if I had kept only the top 3, would
+    the answer still have been in context", which is what licenses shrinking the prompt.
+
+    - ``MRR`` = ``1 / rank`` of the first relevant chunk, ``0.0`` if none is in the top
+      ``k``. Not ``None``: "nothing relevant was retrieved" is a measured outcome with a
+      defined value, unlike a ratio with no denominator.
+    - ``NDCG@k`` uses binary gain, ``DCG = sum rel_i / log2(i+1)``, against an ideal
+      ranking that puts ``min(n_relevant_total, k)`` relevant chunks first. Using the
+      corpus-wide relevant count in the ideal — rather than the retrieved count — is
+      what stops NDCG reading 1.0 for an arm that retrieved one relevant chunk, put it
+      at rank 1, and missed four others.
+    """
+    must_contain = must_contain or {}
+    k = len(chunks) if k is None else k
+    top = list(chunks[:k])
+
+    rel_flags = [
+        _chunk_is_relevant(c.doc_id, c.text, relevant_doc_ids, must_contain) for c in top
+    ]
+    n_retrieved_rel = sum(rel_flags)
+
+    first = next((i for i, rel in enumerate(rel_flags, start=1) if rel), None)
+    mrr = 1.0 / first if first is not None else 0.0
+
+    if not n_relevant_total:
+        return RankMetrics(
+            k=k,
+            n_relevant_retrieved=n_retrieved_rel,
+            n_relevant_total=n_relevant_total,
+            first_relevant_rank=first,
+            mrr=mrr,
+            recall=None,
+            ndcg=None,
+        )
+
+    dcg = sum(1.0 / math.log2(i + 1) for i, rel in enumerate(rel_flags, start=1) if rel)
+    ideal_hits = min(n_relevant_total, k)
+    idcg = sum(1.0 / math.log2(i + 1) for i in range(1, ideal_hits + 1))
+
+    return RankMetrics(
+        k=k,
+        n_relevant_retrieved=n_retrieved_rel,
+        n_relevant_total=n_relevant_total,
+        first_relevant_rank=first,
+        mrr=mrr,
+        recall=n_retrieved_rel / n_relevant_total,
+        ndcg=(dcg / idcg) if idcg else None,
+    )
+
+
 # ------------------------------------------------------------ 3. Cross-Document Reasoning
 
 
