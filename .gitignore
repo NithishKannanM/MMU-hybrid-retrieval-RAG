@@ -9,5 +9,18 @@ data/.index/
 data/.cache/
 *.faiss
 
-# Eval output. The seed questions ARE tracked; the reports are not.
+# Eval output. The seed questions ARE tracked; scratch reports are not.
 reports/*.json
+
+# EXCEPTION: reports/ablate/ IS tracked, deliberately. It holds the interleaved
+# paired ablation the README's numbers come from. Greedy decoding is not
+# reproducible across sessions on this host (the same hybrid config scored
+# AF 0.697 and 0.875 on different days), so these files cannot be regenerated --
+# if they are not committed, every claim in the README is unverifiable.
+# Note that `reports/*.json` above does NOT match subdirectories, so this
+# exception needs no negation pattern; it needs only to be written down.
+
+# secrets: never commit a real .env (.env.example is the tracked template)
+.env
+.env.*
+!.env.example

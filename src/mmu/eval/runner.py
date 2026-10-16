@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Sequence
 
@@ -59,7 +59,14 @@ class QuestionRun:
     xdr: XDRResult | None                 # None for single-document questions
     cur: CURResult
     quality: float
-    marker_compliance: float
+    #: None for a *correct refusal* — an answer that refuses and cites nothing. Marker
+    #: compliance is **undefined** there, not zero, for the same reason :attr:`cp` is:
+    #: the answer was never supposed to carry an ``[Sn]`` marker, so scoring it 0.0 on a
+    #: metric about citing measures the question's shape rather than the model's
+    #: behaviour, and drags a gating rate below its own floor. Set from exactly the same
+    #: condition as AF's refusal carve-out, so the two can never disagree about what a
+    #: refusal is.
+    marker_compliance: float | None
     n_claims: int
     n_supported: int
     degraded_claims: int = 0
@@ -67,6 +74,25 @@ class QuestionRun:
     error: str | None = None
     retrieved_doc_ids: tuple[str, ...] = ()
     cited_doc_ids: tuple[str, ...] = ()
+    #: Set only by :func:`run_interleaved`. ``arm_index`` is this configuration's
+    #: position in the rotation *for this question*, which is what makes the
+    #: counterbalancing auditable after the fact rather than merely asserted.
+    arm_label: str = ""
+    arm_index: int = 0
+
+    @property
+    def service_s(self) -> float:
+        """Retrieval + generation, excluding judging.
+
+        ``latency_s`` wraps the whole of :func:`run_question`, judge calls included, so
+        it is not comparable between two arms of an interleaved run: ``CachingJudge`` is
+        keyed by ``question_id``, which the arms share, so whichever arm runs second
+        gets its identical claim/chunk verdicts for free and looks faster for a reason
+        that has nothing to do with retrieval. This is the quantity a paired latency
+        comparison must use, and it is also the only part of the two that a served
+        request would actually pay.
+        """
+        return self.retrieval_s + self.generate_s
 
 
 @dataclass
@@ -91,6 +117,13 @@ class RunReport:
     epsilon: float = 0.01
     n_documents: int = 0
     n_chunks: int = 0
+    #: This run's label, and every label it was interleaved with (itself included), set
+    #: only by :func:`run_interleaved`. Empty for a standalone run. ``report.py`` refuses
+    #: to print a paired comparison unless the reports agree on a non-empty cohort,
+    #: which is what stops a paired test being computed over runs that were executed
+    #: sequentially and are therefore not paired at all.
+    arm_label: str = ""
+    interleaved_with: tuple[str, ...] = ()
 
     # aggregates
     af: float = 0.0
@@ -108,7 +141,12 @@ class RunReport:
     corpus_lpqu: float = 0.0
     p50_latency_s: float = 0.0
     p95_latency_s: float = 0.0
-    marker_compliance: float = 0.0
+    #: None when no answer was measurable; see :func:`metrics.marker_compliance_rate`.
+    marker_compliance: float | None = 0.0
+    #: Answers the rate was computed over — the corpus total minus correct refusals.
+    #: Printed next to the rate for the same reason ``cp_n`` is: a rate over 5 of 6
+    #: answers and a rate over 6 of 6 are different claims.
+    marker_compliance_n: int = 0
     degraded_claims: int = 0
     invented_spans: int = 0
 
@@ -185,7 +223,39 @@ async def run_question(
     )
     degraded += int(decomposition.degraded)
 
-    af = metrics.answer_faithfulness(claims, is_refusal=is_refusal(answer_text))
+    # A *pure* refusal asserts nothing about the corpus, so it has no claims to verify
+    # and AF's m==0 carve-out should award it 1.0 (see questions.jsonl's
+    # unanswerable-001: "A correct refusal must score 1.0 on Answer Faithfulness").
+    # Measured: the judge decomposes "The provided context does not contain this
+    # information." — verbatim the wording prompt.py suggests — into one unsupported
+    # claim, so m==1, the carve-out never fires, and a textbook refusal scored 0.0.
+    #
+    # `cited_chunk_ids` is the laundering guard, and it is why this is not simply
+    # `if is_refusal(...)`. is_refusal uses `search`, so it also matches a refusal
+    # sentence tacked onto a real answer; prompt.py calls that false positive the worse
+    # failure, since it would launder an unsupported answer into a perfect score. An
+    # answer that cites nothing cannot be laundering support it never claimed.
+    pure_refusal = is_refusal(answer_text) and not cited_chunk_ids
+
+    # Was abstaining the right call? Two situations where it was: the question is
+    # unanswerable (no required documents exist to find), or a required document was
+    # not retrieved, in which case refusing beats inventing an answer and the failure
+    # belongs to retrieval — `Cov` and `CP` already carry it, and double-charging it to
+    # AF would turn a generation metric into a retrieval one.
+    #
+    # Everything else is an unjustified refusal: the model had the required document in
+    # context and declined anyway. Measured: the generator refused `single-002`, an
+    # "easy" single-document question, under dense-only and sparse-only with gdpr
+    # retrieved at CP 0.74 and 1.00 — and the old carve-out scored it 1.00, because it
+    # keyed on "does this look like a refusal" and never asked whether it should have
+    # been one. That made corpus AF 1.000 reachable by refusing everything.
+    required = set(question.required_doc_ids)
+    refusal_is_correct = pure_refusal and (
+        not required or not required.issubset(retrieved_doc_ids)
+    )
+    if pure_refusal:
+        claims = ()
+    af = metrics.answer_faithfulness(claims, refusal_is_correct=refusal_is_correct)
     cp: float | None = None
     if question.relevant_doc_ids:
         cp = metrics.context_precision(
@@ -251,7 +321,16 @@ async def run_question(
         xdr=xdr,
         cur=cur,
         quality=quality,
-        marker_compliance=marker_compliance(answer_text, len(result.chunks)),
+        # Keyed on `pure_refusal`, deliberately *not* on `refusal_is_correct`. An
+        # unjustified refusal is a real failure, but it is an *answering* failure, and
+        # AF now scores it 0.0. Counting it 0.0 here as well would charge it a second
+        # time to the rate that gates Cite/XDR/CUR — resurrecting the exact bug this
+        # None exists to fix, where a gating metric trips for a reason that has nothing
+        # to do with how well the model cites. No refusal carries a marker by
+        # construction, so for all of them compliance is undefined rather than failed.
+        marker_compliance=(
+            None if pure_refusal else marker_compliance(answer_text, len(result.chunks))
+        ),
         n_claims=len(claims),
         n_supported=sum(1 for c in claims if c.supported),
         degraded_claims=degraded,
@@ -311,6 +390,113 @@ async def run_eval(
     return report
 
 
+@dataclass(frozen=True)
+class Arm:
+    """One configuration under test in an interleaved run."""
+
+    label: str
+    channels: tuple[str, ...]
+
+
+#: The standard three-way retrieval ablation, interleaved. ``hybrid`` is first so it is
+#: the baseline the others are differenced against in the paired report.
+DEFAULT_ARMS: tuple[Arm, ...] = (
+    Arm("hybrid", ("dense", "sparse")),
+    Arm("dense-only", ("dense",)),
+    Arm("sparse-only", ("sparse",)),
+)
+
+
+async def run_interleaved(
+    questions: Sequence[Question],
+    retriever: HybridRetriever,
+    generator: Generator,
+    judge: Judge,
+    settings: Settings,
+    *,
+    arms: Sequence[Arm] = DEFAULT_ARMS,
+    k: int | None = None,
+    rrf_k: int | None = None,
+    cache_path: Path | None = None,
+    on_question=None,
+) -> dict[str, RunReport]:
+    """Run every arm on every question *within one process*, question-major.
+
+    This exists because the sequential ablation — one full ``run_eval`` per
+    configuration, one after another — cannot support a latency comparison, and this
+    project measured that the hard way. Across five sequential runs of the same
+    ``qwen2.5:7b-instruct-q4_K_M``, generator throughput ranged from 6.7 to 20.5
+    characters per second while retrieval accounted for 0.0-1.4% of wall clock. The
+    "3x faster" p50 that fell out of that table was host state, not retrieval: a 3B
+    model in the same series was *slower* than the fast 7B run, which is backwards and
+    gives the game away. Differencing corpus means across separately-executed runs
+    differences the configuration and everything else that drifted, and on this hardware
+    everything else dominates.
+
+    Question-major fixes it by construction. Both arms answer ``xdr-001`` seconds apart,
+    on the same loaded model, at the same temperature, under the same thermal and
+    contention state, so the within-pair difference has one plausible cause left.
+
+    **The arm order rotates per question.** Within a question the first arm pays any
+    cold-start cost and later arms benefit from a warm KV cache and a resident model, so
+    a fixed order would simply relabel that bias as an arm effect. Rotating by question
+    index spreads each position evenly across arms (with 3 arms and 6 questions, each
+    arm leads exactly twice) and :attr:`QuestionRun.arm_index` records where each run
+    actually landed, so the balance can be checked rather than trusted.
+
+    What this still does not fix: an arm's own ``latency_s`` and therefore ``LpQU``
+    remain contaminated by judge-cache sharing between arms (see
+    :attr:`QuestionRun.service_s`), and ``n`` is unchanged — pairing buys precision per
+    question, not more questions. Six questions is still six questions.
+    """
+    if not arms:
+        raise ValueError("run_interleaved needs at least one arm")
+    labels = [a.label for a in arms]
+    if len(set(labels)) != len(labels):
+        raise ValueError(f"arm labels must be unique, got {labels}")
+
+    k = k if k is not None else settings.top_k
+    rrf_k = rrf_k if rrf_k is not None else settings.rrf_k
+    cohort = tuple(sorted(labels))
+
+    reports: dict[str, RunReport] = {
+        arm.label: RunReport(
+            judge=judge.name,
+            model=generator.name,
+            embed_model=(
+                retriever.store.manifest.embed_model if retriever.store.manifest else ""
+            ),
+            channels=tuple(arm.channels),
+            k=k,
+            rrf_k=rrf_k,
+            weights=(settings.weight_af, settings.weight_cp, settings.weight_xdr),
+            epsilon=settings.lpqu_epsilon,
+            n_documents=len(retriever.store.doc_ids()),
+            n_chunks=len(retriever.store),
+            arm_label=arm.label,
+            interleaved_with=cohort,
+        )
+        for arm in arms
+    }
+
+    for i, question in enumerate(questions):
+        shift = i % len(arms)
+        rotated = list(arms[shift:]) + list(arms[:shift])
+        for position, arm in enumerate(rotated):
+            run = await run_question(
+                question, retriever, generator, judge, settings,
+                k=k, channels=arm.channels, rrf_k=rrf_k, cache_path=cache_path,
+            )
+            run = replace(run, arm_label=arm.label, arm_index=position)
+            reports[arm.label].runs.append(run)
+            if on_question is not None:
+                on_question(arm.label, run)
+
+    for report in reports.values():
+        _aggregate(report)
+    return reports
+
+
 def _aggregate(report: RunReport) -> None:
     runs = report.runs
     if not runs:
@@ -344,5 +530,6 @@ def _aggregate(report: RunReport) -> None:
     report.marker_compliance = metrics.marker_compliance_rate(
         [r.marker_compliance for r in runs]
     )
+    report.marker_compliance_n = sum(1 for r in runs if r.marker_compliance is not None)
     report.degraded_claims = sum(r.degraded_claims for r in runs)
     report.invented_spans = sum(r.invented_spans for r in runs)

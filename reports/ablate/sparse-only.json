@@ -1,0 +1,289 @@
+{
+  "runs": [
+    {
+      "question_id": "xdr-001",
+      "question": "A processor in Germany discovers a personal data breach affecting EU residents. How quickly must we notify, whom exactly, and what does our internal policy require beyond the statutory minimum?",
+      "answer_type": "cross_document",
+      "answer_text": "A processor in Germany must notify the controller without undue delay after becoming aware of a personal data breach [S5][S6]. The controller must then notify the supervisory authority, which in the EU context is typically the Federal Commissioner, without undue delay and, where feasible, not later than 72 hours after having become aware of the breach [S6][S8].\n\nAccording to the internal policy, the four-hour rule applies, meaning any member of staff who detects a security incident must escalate it to the Office of the Data Protection Officer within four hours of detection [S4]. This internal deadline is stricter than the statutory minimum of 72 hours [S6][S8].\n\nBeyond the statutory minimum, the internal policy requires that the Data Protection Officer assesses whether the security incident constitutes a personal data breach and, if so, whether it gives rise to an external reporting obligation. This assessment is recorded in the incident register [S5][S7].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 78.58707255899935,
+      "retrieval_s": 0.002804021001793444,
+      "generate_s": 78.58205777599869,
+      "af": 1.0,
+      "cp": 0.9150793650793649,
+      "xdr": {
+        "coverage": 1.0,
+        "cite": 1.0,
+        "synthesis": 1.0,
+        "xdr": 1.0,
+        "n_required": 3
+      },
+      "cur": {
+        "cited": 0.625,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.625,
+        "k": 8
+      },
+      "quality": 0.983015873015873,
+      "marker_compliance": 1.0,
+      "n_claims": 6,
+      "n_supported": 6,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "arm_label": "sparse-only",
+      "arm_index": 2
+    },
+    {
+      "question_id": "xdr-002",
+      "question": "Who inside the company owns the external breach notification, and to which authority does it have to go?",
+      "answer_type": "cross_document",
+      "answer_text": "The Data Protection Officer owns every external notification arising from a personal data breach and determines the recipient of any external report, the contents of that report, and its timing [S1][S3]. The external report must be made to the supervisory authority competent in accordance with Article 55 of the GDPR [S7][S8].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 43.78106613199998,
+      "retrieval_s": 0.0018385950024821796,
+      "generate_s": 43.777211275999434,
+      "af": 1.0,
+      "cp": 0.9166666666666666,
+      "xdr": {
+        "coverage": 1.0,
+        "cite": 0.5,
+        "synthesis": 1.0,
+        "xdr": 0.5,
+        "n_required": 2
+      },
+      "cur": {
+        "cited": 0.5,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.5,
+        "k": 8
+      },
+      "quality": 0.7833333333333334,
+      "marker_compliance": 1.0,
+      "n_claims": 2,
+      "n_supported": 2,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "gdpr"
+      ],
+      "arm_label": "sparse-only",
+      "arm_index": 1
+    },
+    {
+      "question_id": "xdr-003",
+      "question": "Our processor tells us about a breach. What are our obligations as controller, and does our internal deadline differ from the statutory one?",
+      "answer_type": "cross_document",
+      "answer_text": "According to the internal policy, when a processor acting on your behalf detects an incident, they must notify the Office of the Data Protection Officer directly [S2]. This obligation is in addition to any external reporting obligations they may have.\n\nRegarding the internal deadline, the policy imposes a four-hour requirement for any member of staff who detects a security incident to escalate it to the Office of the Data Protection Officer [S4]. This internal deadline is stricter than any external reporting deadline imposed by law [S1][S3]. Therefore, the four-hour internal deadline must be adhered to, even if it is shorter than any statutory deadline [S4].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 50.589506976997654,
+      "retrieval_s": 0.0022322460026771296,
+      "generate_s": 50.58507732399812,
+      "af": 0.8,
+      "cp": 0.5,
+      "xdr": {
+        "coverage": 1.0,
+        "cite": 0.5,
+        "synthesis": 0.0,
+        "xdr": 0.0,
+        "n_required": 2
+      },
+      "cur": {
+        "cited": 0.5,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.5,
+        "k": 8
+      },
+      "quality": 0.42000000000000004,
+      "marker_compliance": 1.0,
+      "n_claims": 5,
+      "n_supported": 4,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr"
+      ],
+      "cited_doc_ids": [
+        "company-policy"
+      ],
+      "arm_label": "sparse-only",
+      "arm_index": 0
+    },
+    {
+      "question_id": "single-001",
+      "question": "What is the statutory deadline for notifying a personal data breach to the supervisory authority?",
+      "answer_type": "single_document",
+      "answer_text": "The statutory deadline for notifying a personal data breach to the supervisory authority is without undue delay and, where feasible, not later than 72 hours after having become aware of it [S2][S4][S7][S8].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 64.14241371000026,
+      "retrieval_s": 0.0017047199980879668,
+      "generate_s": 64.13778422700125,
+      "af": 1.0,
+      "cp": 0.125,
+      "xdr": null,
+      "cur": {
+        "cited": 0.5,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.5,
+        "k": 8
+      },
+      "quality": 0.7083333333333333,
+      "marker_compliance": 1.0,
+      "n_claims": 1,
+      "n_supported": 1,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "arm_label": "sparse-only",
+      "arm_index": 2
+    },
+    {
+      "question_id": "single-002",
+      "question": "What distinguishes a data controller from a data processor?",
+      "answer_type": "single_document",
+      "answer_text": "The provided context does not contain this information.",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 54.57638580699859,
+      "retrieval_s": 0.0010621690016705543,
+      "generate_s": 54.572336645996984,
+      "af": 0.0,
+      "cp": 1.0,
+      "xdr": null,
+      "cur": {
+        "cited": 0.0,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.0,
+        "k": 8
+      },
+      "quality": 0.3333333333333333,
+      "marker_compliance": null,
+      "n_claims": 0,
+      "n_supported": 0,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "gdpr"
+      ],
+      "cited_doc_ids": [],
+      "arm_label": "sparse-only",
+      "arm_index": 1
+    },
+    {
+      "question_id": "unanswerable-001",
+      "question": "What is the deductible on our cyber-liability insurance policy for a notifiable personal data breach?",
+      "answer_type": "unanswerable",
+      "answer_text": "The provided context does not contain this information.",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 58.20817728900147,
+      "retrieval_s": 0.0016990340009215288,
+      "generate_s": 58.20367605000138,
+      "af": 1.0,
+      "cp": null,
+      "xdr": null,
+      "cur": {
+        "cited": 0.0,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.0,
+        "k": 8
+      },
+      "quality": 1.0,
+      "marker_compliance": null,
+      "n_claims": 0,
+      "n_supported": 0,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [],
+      "arm_label": "sparse-only",
+      "arm_index": 0
+    }
+  ],
+  "judge": "local",
+  "model": "qwen2.5:7b-instruct-q4_K_M",
+  "embed_model": "BAAI/bge-m3",
+  "channels": [
+    "sparse"
+  ],
+  "k": 8,
+  "rrf_k": 60,
+  "weights": [
+    0.4,
+    0.2,
+    0.4
+  ],
+  "epsilon": 0.01,
+  "n_documents": 3,
+  "n_chunks": 378,
+  "arm_label": "sparse-only",
+  "interleaved_with": [
+    "dense-only",
+    "hybrid",
+    "sparse-only"
+  ],
+  "af": 0.7999999999999999,
+  "cp": 0.6913492063492063,
+  "cp_n": 5,
+  "xdr_mean": 0.5,
+  "xdr_n": 3,
+  "cov_mean": 1.0,
+  "cite_mean": 0.6666666666666666,
+  "syn_mean": 0.6666666666666666,
+  "cur_cited": 0.3541666666666667,
+  "cur_attr": 0.0,
+  "cur_tok": 0.0,
+  "cur_gap": 0.3541666666666667,
+  "corpus_lpqu": 82.75385736062107,
+  "p50_latency_s": 56.39228154800003,
+  "p95_latency_s": 74.97590784674958,
+  "marker_compliance": 1.0,
+  "marker_compliance_n": 4,
+  "degraded_claims": 0,
+  "invented_spans": 0
+}

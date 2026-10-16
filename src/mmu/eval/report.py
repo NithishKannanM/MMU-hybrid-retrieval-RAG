@@ -24,10 +24,16 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Sequence
 
+from mmu.eval.metrics import paired_sign_test
 from mmu.eval.runner import RunReport
 
 #: Below this, markers are unreliable and every marker-derived column is suspect.
 MARKER_RELIABILITY_FLOOR = 0.8
+
+#: Paired service-latency differences at or under this many seconds count as ties.
+#: Generation here takes tens of seconds, so this only absorbs timer jitter; without a
+#: threshold a 2ms difference would be scored as a win and inflate the sign test's n.
+LATENCY_TIE_S = 0.05
 
 
 def _noise_band(n: int) -> float:
@@ -63,8 +69,27 @@ def render(report: RunReport, *, verbose: bool = False) -> str:
         f"weights: af={w_af:.2f} cp={w_cp:.2f} xdr={w_xdr:.2f}   eps={report.epsilon}"
     )
 
-    mark = "OK" if report.markers_reliable else "UNRELIABLE"
-    lines.append(f"marker_compliance: {report.marker_compliance:.2f}  [{mark}]")
+    # Branch on None before consulting markers_reliable: that property answers "is a
+    # warning warranted", and for an unmeasurable run the answer is no — but printing
+    # "OK" would claim markers were checked when nothing in the run carried one.
+    if report.marker_compliance is None:
+        lines.append(
+            "marker_compliance: n/a  [no answer was measurable — every one correctly "
+            "cited nothing]"
+        )
+    else:
+        mark = "OK" if report.markers_reliable else "UNRELIABLE"
+        excluded = len(report.runs) - report.marker_compliance_n
+        over = f"over {report.marker_compliance_n}/{len(report.runs)} answer(s)"
+        note = (
+            f", {excluded} correct refusal(s) excluded as undefined"
+            if excluded
+            else ""
+        )
+        lines.append(
+            f"marker_compliance: {report.marker_compliance:.2f}  [{mark}]  "
+            f"{over}{note}"
+        )
     lines.append("")
 
     header = (
@@ -103,7 +128,7 @@ def render(report: RunReport, *, verbose: bool = False) -> str:
     lines.append(f"{'  p95 latency':<22}{report.p95_latency_s:>8.2f}s")
 
     notes: list[str] = []
-    if not report.markers_reliable:
+    if report.marker_compliance is not None and not report.markers_reliable:
         notes.append(
             f"WARNING: marker_compliance {report.marker_compliance:.2f} < "
             f"{MARKER_RELIABILITY_FLOOR}. Cite, XDR and every CUR number above are "
@@ -166,6 +191,164 @@ def render(report: RunReport, *, verbose: bool = False) -> str:
     return "\n".join(lines)
 
 
+def _runs_by_id(report: dict) -> dict[str, dict]:
+    return {r["question_id"]: r for r in report.get("runs", [])}
+
+
+def _service_s(run: dict) -> float:
+    """Retrieval + generation, excluding judging — see ``QuestionRun.service_s``.
+
+    Recomputed from the two component fields rather than read from ``latency_s``
+    because ``latency_s`` includes judge time, which arms of an interleaved run share
+    through the question-keyed judgment cache: whichever arm ran second got identical
+    verdicts for free and would look faster for no retrieval-related reason.
+    """
+    return run.get("retrieval_s", 0.0) + run.get("generate_s", 0.0)
+
+
+def _signed(value: float, width: int) -> str:
+    """A signed delta cell. A difference that rounds to zero prints unsigned.
+
+    ``f"{-0.0001:+.2f}"`` is ``-0.00``, which reads as "the arm was slower" when the
+    honest reading is "these were the same". The sign test already treats such a value
+    as a tie; the table must not contradict it.
+    """
+    if round(value, 2) == 0:
+        return f"{0.0:>{width}.2f}"
+    return f"{value:>+{width}.2f}"
+
+
+def paired_cohort_error(reports: Sequence[dict], labels: Sequence[str]) -> str | None:
+    """``None`` if these reports may be compared pairwise, else why they may not.
+
+    The check is not bureaucratic. A paired test over runs that were *executed*
+    sequentially is strictly worse than no test: it inherits all the between-run drift
+    the pairing was supposed to remove, and then reports a p-value about it. So pairing
+    is permitted only for reports that recorded themselves as members of one
+    interleaved cohort, and only when their question sequences actually line up.
+    """
+    if len(reports) < 2:
+        return "a paired comparison needs at least two runs"
+    cohorts = [tuple(r.get("interleaved_with") or ()) for r in reports]
+    if not all(cohorts[0] and c == cohorts[0] for c in cohorts):
+        return (
+            "these runs were not interleaved with each other, so they cannot be paired. "
+            "Latency in particular is not comparable across separately-executed runs: "
+            "generator throughput on this project varied 3x between sequential runs of "
+            "the same model. Use `mmu eval ablate` to run the configurations "
+            "question-major in one process."
+        )
+    for label, r in zip(labels, reports):
+        own = r.get("arm_label") or label
+        if own not in cohorts[0]:
+            return f"{own!r} is not a member of the cohort {list(cohorts[0])}"
+    ids = [[r["question_id"] for r in rep.get("runs", [])] for rep in reports]
+    if any(seq != ids[0] for seq in ids):
+        return "the runs do not cover the same questions in the same order"
+    if not ids[0]:
+        return "no questions in these runs"
+    return None
+
+
+def render_paired(reports: Sequence[dict], labels: Sequence[str]) -> str:
+    """Per-question paired differences against the first run, with exact sign tests.
+
+    The first run is the baseline purely by position, not by merit. Each row is one
+    question that both arms answered seconds apart on the same loaded model, which is
+    what licenses attributing the difference to the configuration — see
+    ``runner.run_interleaved`` for why the unpaired version of this table could not.
+
+    Significance is reported for the *difference*, and the function still never names a
+    winner: it prints which arm was higher, how often, and the p-value, and where the
+    design could not have reached significance at all it says so instead of letting a
+    non-significant p be read as evidence of no effect.
+    """
+    problem = paired_cohort_error(reports, labels)
+    if problem is not None:
+        return f"PAIRED COMPARISON UNAVAILABLE: {problem}"
+
+    base_label, base = labels[0], reports[0]
+    base_runs = _runs_by_id(base)
+    qids = [r["question_id"] for r in base.get("runs", [])]
+
+    lines: list[str] = []
+    lines.append(
+        f"PAIRED vs {base_label} (interleaved, question-major, arm order rotated "
+        f"per question)"
+    )
+    lines.append(
+        "Each row is one question answered by both arms back to back on the same loaded "
+        "model, so the\nwithin-pair difference is attributable to the configuration and "
+        "not to host drift between runs."
+    )
+
+    for label, rep in list(zip(labels, reports))[1:]:
+        arm_runs = _runs_by_id(rep)
+        lines.append("")
+        head = (
+            f"{'question':<18}{'t_base':>8}{'t_arm':>8}{'dt':>9}"
+            f"{'AF_base':>9}{'AF_arm':>8}{'dAF':>7}{'dQ':>7}"
+        )
+        lines.append(f"-- {label} vs {base_label}")
+        lines.append(head)
+        lines.append("-" * len(head))
+
+        dt: list[float] = []
+        daf: list[float] = []
+        dq: list[float] = []
+        for qid in qids:
+            b, a = base_runs[qid], arm_runs[qid]
+            tb, ta = _service_s(b), _service_s(a)
+            dt.append(ta - tb)
+            daf.append(a["af"] - b["af"])
+            dq.append(a["quality"] - b["quality"])
+            lines.append(
+                f"{qid:<18}{tb:>8.2f}{ta:>8.2f}{_signed(ta - tb, 9)}"
+                f"{b['af']:>9.2f}{a['af']:>8.2f}{_signed(a['af'] - b['af'], 7)}"
+                f"{_signed(a['quality'] - b['quality'], 7)}"
+            )
+
+        lines.append("")
+        for name, deltas, eps, unit in (
+            ("service latency", dt, LATENCY_TIE_S, "s"),
+            ("Answer Faithfulness", daf, 0.0, ""),
+            ("quality (composite)", dq, 0.0, ""),
+        ):
+            t = paired_sign_test(deltas, epsilon=eps)
+            mean = sum(deltas) / len(deltas) if deltas else 0.0
+            direction = (
+                f"{label} higher in {t.wins}, lower in {t.losses}, tied {t.ties}"
+            )
+            verdict = f"p={t.p_two_sided:.3f}"
+            if not t.conclusive_possible:
+                verdict += (
+                    f" — but n={t.n_pairs} CANNOT reach p<0.05 "
+                    f"(best possible {t.best_attainable_p:.3f}); this is a power "
+                    f"failure, not evidence of no difference"
+                )
+            elif not t.significant:
+                verdict += f" (floor {t.best_attainable_p:.3f}) — not a result"
+            else:
+                verdict += (
+                    f" (floor {t.best_attainable_p:.3f}) — consistent in sign across "
+                    f"every informative pair"
+                )
+            lines.append(f"{name:<22}mean {_signed(mean, 8)}{unit:<2} {direction}")
+            lines.append(f"{'':<22}{verdict}")
+
+    lines.append("")
+    unanimous = paired_sign_test([1.0] * len(qids))
+    lines.append(
+        "A sign test asks only whether one arm is consistently higher, never by how "
+        "much. The means\nabove are descriptive. With "
+        f"{len(qids)} question(s) the strongest result any of these tests could report "
+        f"is\np={unanimous.best_attainable_p:.3f}, and only if every question agrees in "
+        "sign; ties lower it further. Pairing buys\nprecision per question, not more "
+        "questions."
+    )
+    return "\n".join(lines)
+
+
 def render_comparison(reports: Sequence[dict], labels: Sequence[str]) -> str:
     """Side-by-side runs. Prints deltas and a noise band; never names a winner."""
     lines: list[str] = []
@@ -190,10 +373,31 @@ def render_comparison(reports: Sequence[dict], labels: Sequence[str]) -> str:
         f"+/-{band:.2f} — differences smaller than that are not results, and this "
         f"table deliberately does not declare a winner."
     )
+    # The latency columns are the ones most easily misread, because a 3x difference
+    # looks far too large to be noise. Measured on this project: it was. Unless the runs
+    # were interleaved, p50 and LpQU carry whatever the host was doing at the time.
+    if len(reports) < 2:
+        pass  # nothing to compare latency across
+    elif paired_cohort_error(reports, labels) is None:
+        lines.append(
+            "These runs were interleaved question-major, so the paired table below "
+            "tests the differences directly."
+        )
+    else:
+        lines.append(
+            "p50/LpQU are NOT comparable across these rows: they were executed as "
+            "separate runs, and generator throughput on this host varied 3x between "
+            "sequential runs of the same model while retrieval accounted for under 2% "
+            "of wall clock. Run `mmu eval ablate` for a latency comparison that means "
+            "something."
+        )
+    # `is not None` matters: the rate is None for a run in which no answer was
+    # measurable, and `None < float` raises rather than comparing.
     unreliable = [
         label
         for label, r in zip(labels, reports)
-        if r.get("marker_compliance", 1.0) < MARKER_RELIABILITY_FLOOR
+        if r.get("marker_compliance") is not None
+        and r["marker_compliance"] < MARKER_RELIABILITY_FLOOR
     ]
     if unreliable:
         lines.append(

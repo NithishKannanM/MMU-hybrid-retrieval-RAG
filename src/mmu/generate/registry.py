@@ -41,6 +41,13 @@ _ANTHROPIC_ALIASES: dict[str, str] = {
     "default": "anthropic_model",
 }
 
+#: Aliases valid under the gemini backend. Unlike anthropic, Google does publish a
+#: cheaper tier worth a distinct alias, so "fast" resolves rather than erroring.
+_GEMINI_ALIASES: dict[str, str] = {
+    "default": "gemini_model",
+    "fast": "gemini_fast_model",
+}
+
 
 def build_generator(settings: "Settings", alias: str | None = None) -> "Generator":
     """Build the :class:`Generator` named by ``settings.generator_backend``, with the
@@ -73,9 +80,19 @@ def build_generator(settings: "Settings", alias: str | None = None) -> "Generato
             api_key=settings.anthropic_api_key,
             timeout=settings.request_timeout_s,
         )
+    if backend == "gemini":
+        from mmu.generate.gemini import GeminiGenerator
+
+        model = _resolve(_GEMINI_ALIASES, settings, alias, backend="gemini")
+        return GeminiGenerator(
+            model=model,
+            api_keys=settings.gemini_api_keys,
+            host=settings.gemini_host,
+            timeout=settings.request_timeout_s,
+        )
     raise ValueError(
         f"unknown generator_backend {settings.generator_backend!r} "
-        f"(expected 'ollama' or 'anthropic')"
+        f"(expected 'ollama', 'anthropic' or 'gemini')"
     )
 
 
@@ -100,12 +117,15 @@ def available_aliases(settings: "Settings") -> list[dict[str, object]]:
     concern for `/health` to check separately, not an aliasing concern for this module.
     """
     backend = settings.generator_backend.lower()
-    table = _ANTHROPIC_ALIASES if backend == "anthropic" else _OLLAMA_ALIASES
+    table = {
+        "anthropic": _ANTHROPIC_ALIASES,
+        "gemini": _GEMINI_ALIASES,
+    }.get(backend, _OLLAMA_ALIASES)
     return [
         {
             "alias": alias,
             "backend": backend,
-            "local": backend != "anthropic",
+            "local": backend not in ("anthropic", "gemini"),
             "model": getattr(settings, attr),
         }
         for alias, attr in table.items()

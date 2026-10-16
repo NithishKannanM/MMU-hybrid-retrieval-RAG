@@ -1,0 +1,291 @@
+{
+  "runs": [
+    {
+      "question_id": "xdr-001",
+      "question": "A processor in Germany discovers a personal data breach affecting EU residents. How quickly must we notify, whom exactly, and what does our internal policy require beyond the statutory minimum?",
+      "answer_type": "cross_document",
+      "answer_text": "A processor in Germany must notify the supervisory authority without undue delay and, where feasible, not later than 72 hours after having become aware of the personal data breach [S1][S3][S5]. The notification must include:\n\n1. A description of the nature of the personal data breach, including where possible, the categories and approximate number of data subjects concerned and the categories and approximate number of personal data records concerned [S2][S3][S5].\n2. The name and contact details of the data protection officer or other contact point where more information can be obtained [S2][S3][S5].\n3. A description of the likely consequences of the personal data breach [S2][S3][S5].\n4. A description of the measures taken or proposed by the controller to address the personal data breach, including measures to mitigate its possible adverse effects [S2][S3][S5].\n\nAdditionally, the processor must notify the controller without undue delay [S1][S3][S5]. Internally, the processor must escalate the incident to the Office of the Data Protection Officer within four hours of detection [S6]. The processor must not wait for its own internal investigation to conclude before notifying the controller [S6].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 81.96345488299994,
+      "retrieval_s": 0.3827710869991279,
+      "generate_s": 81.57759466800053,
+      "af": 1.0,
+      "cp": 0.6333333333333333,
+      "xdr": {
+        "coverage": 1.0,
+        "cite": 1.0,
+        "synthesis": 1.0,
+        "xdr": 1.0,
+        "n_required": 3
+      },
+      "cur": {
+        "cited": 0.625,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.625,
+        "k": 8
+      },
+      "quality": 0.9266666666666667,
+      "marker_compliance": 1.0,
+      "n_claims": 12,
+      "n_supported": 12,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "arm_label": "dense-only",
+      "arm_index": 1
+    },
+    {
+      "question_id": "xdr-002",
+      "question": "Who inside the company owns the external breach notification, and to which authority does it have to go?",
+      "answer_type": "cross_document",
+      "answer_text": "The external breach notification is owned by the Data Protection Officer. The Data Protection Officer determines the recipient, contents, and timing of any external report, and this report must be made to the competent supervisory authority as required by law [S1][S3][S6].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 63.151093645999936,
+      "retrieval_s": 0.33203962900006445,
+      "generate_s": 62.81708462700044,
+      "af": 0.5,
+      "cp": 0.9761904761904762,
+      "xdr": {
+        "coverage": 0.5,
+        "cite": 0.5,
+        "synthesis": 1.0,
+        "xdr": 0.25,
+        "n_required": 2
+      },
+      "cur": {
+        "cited": 0.375,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.375,
+        "k": 8
+      },
+      "quality": 0.49523809523809526,
+      "marker_compliance": 1.0,
+      "n_claims": 2,
+      "n_supported": 1,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "gdpr"
+      ],
+      "arm_label": "dense-only",
+      "arm_index": 0
+    },
+    {
+      "question_id": "xdr-003",
+      "question": "Our processor tells us about a breach. What are our obligations as controller, and does our internal deadline differ from the statutory one?",
+      "answer_type": "cross_document",
+      "answer_text": "As a controller, you are required to notify the supervisory authority without undue delay and, where feasible, not later than 72 hours after having become aware of the personal data breach [S1][S3][S7]. This statutory deadline applies to both controllers and processors [S1][S4].\n\nYour internal deadline, however, is more stringent. Your company policy mandates that any member of staff who detects a security incident must escalate it to the Office of the Data Protection Officer within four hours of detection [S4][S5]. This internal deadline is shorter than the statutory 72-hour limit and is an internal control set by your company [S4][S5]. Failure to escalate within four hours is considered a disciplinary matter, regardless of whether the incident ultimately qualifies as a reportable personal data breach [S4][S5].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 77.05227265099893,
+      "retrieval_s": 0.340274677000707,
+      "generate_s": 76.70962499099915,
+      "af": 0.5,
+      "cp": 0.65,
+      "xdr": {
+        "coverage": 1.0,
+        "cite": 1.0,
+        "synthesis": 1.0,
+        "xdr": 1.0,
+        "n_required": 2
+      },
+      "cur": {
+        "cited": 0.625,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.625,
+        "k": 8
+      },
+      "quality": 0.73,
+      "marker_compliance": 1.0,
+      "n_claims": 6,
+      "n_supported": 3,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "arm_label": "dense-only",
+      "arm_index": 2
+    },
+    {
+      "question_id": "single-001",
+      "question": "What is the statutory deadline for notifying a personal data breach to the supervisory authority?",
+      "answer_type": "single_document",
+      "answer_text": "The controller shall notify the personal data breach to the supervisory authority without undue delay and, where feasible, not later than 72 hours after having become aware of it [S1][S3].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 63.514923398000974,
+      "retrieval_s": 0.32362386000022525,
+      "generate_s": 63.18833036599972,
+      "af": 1.0,
+      "cp": 1.0,
+      "xdr": null,
+      "cur": {
+        "cited": 0.25,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.25,
+        "k": 8
+      },
+      "quality": 1.0,
+      "marker_compliance": 1.0,
+      "n_claims": 1,
+      "n_supported": 1,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "gdpr",
+        "national-law"
+      ],
+      "arm_label": "dense-only",
+      "arm_index": 1
+    },
+    {
+      "question_id": "single-002",
+      "question": "What distinguishes a data controller from a data processor?",
+      "answer_type": "single_document",
+      "answer_text": "The provided context does not contain this information.",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 59.15295915199749,
+      "retrieval_s": 0.0700681890011765,
+      "generate_s": 59.08083261699721,
+      "af": 0.0,
+      "cp": 0.7416666666666666,
+      "xdr": null,
+      "cur": {
+        "cited": 0.0,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.0,
+        "k": 8
+      },
+      "quality": 0.24722222222222215,
+      "marker_compliance": null,
+      "n_claims": 0,
+      "n_supported": 0,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [],
+      "arm_label": "dense-only",
+      "arm_index": 0
+    },
+    {
+      "question_id": "unanswerable-001",
+      "question": "What is the deductible on our cyber-liability insurance policy for a notifiable personal data breach?",
+      "answer_type": "unanswerable",
+      "answer_text": "The provided context does not contain this information.",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 61.96455724200132,
+      "retrieval_s": 0.3308262870014005,
+      "generate_s": 61.63181306399929,
+      "af": 1.0,
+      "cp": null,
+      "xdr": null,
+      "cur": {
+        "cited": 0.0,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.0,
+        "k": 8
+      },
+      "quality": 1.0,
+      "marker_compliance": null,
+      "n_claims": 0,
+      "n_supported": 0,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [],
+      "arm_label": "dense-only",
+      "arm_index": 2
+    }
+  ],
+  "judge": "local",
+  "model": "qwen2.5:7b-instruct-q4_K_M",
+  "embed_model": "BAAI/bge-m3",
+  "channels": [
+    "dense"
+  ],
+  "k": 8,
+  "rrf_k": 60,
+  "weights": [
+    0.4,
+    0.2,
+    0.4
+  ],
+  "epsilon": 0.01,
+  "n_documents": 3,
+  "n_chunks": 378,
+  "arm_label": "dense-only",
+  "interleaved_with": [
+    "dense-only",
+    "hybrid",
+    "sparse-only"
+  ],
+  "af": 0.6666666666666666,
+  "cp": 0.8002380952380952,
+  "cp_n": 5,
+  "xdr_mean": 0.75,
+  "xdr_n": 3,
+  "cov_mean": 0.8333333333333334,
+  "cite_mean": 0.8333333333333334,
+  "syn_mean": 1.0,
+  "cur_cited": 0.3125,
+  "cur_attr": 0.0,
+  "cur_tok": 0.0,
+  "cur_gap": 0.3125,
+  "corpus_lpqu": 92.47272525658377,
+  "p50_latency_s": 63.333008522000455,
+  "p95_latency_s": 80.73565932499969,
+  "marker_compliance": 1.0,
+  "marker_compliance_n": 4,
+  "degraded_claims": 0,
+  "invented_spans": 0
+}

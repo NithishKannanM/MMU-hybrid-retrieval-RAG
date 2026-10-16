@@ -160,10 +160,37 @@ async def test_mid_stream_failure_emits_error_and_never_switches_model() -> None
 
 
 async def test_generator_unavailable_is_503() -> None:
-    app = create_app(retriever=StubRetriever(), generator=None)
+    """A generator that exists but cannot serve: routes_answer turns its typed failure
+    into 503, not 500.
+
+    This used to pass ``generator=None``, which means "build one from settings" rather
+    than "there is no generator" — so the 503 came from the real Ollama having no model
+    pulled, and the test silently started failing the moment one was. Exactly the shape
+    LEARNING.txt names: it passed because the world was empty. ``unavailable=True``
+    asserts the behaviour instead of the environment.
+    """
+    app = create_app(retriever=StubRetriever(), generator=FakeGenerator(unavailable=True))
     async with app_client(app) as client:
         response = await client.post("/answer", json={"query": "q"})
     assert response.status_code == 503
+    assert "unavailable" in response.json()["detail"]
+
+
+async def test_generator_that_cannot_be_built_is_503_carrying_the_reason() -> None:
+    """The other 503 path: the lifespan could not build a generator at all, so
+    ``app.state.generator`` stays None and the reason has to reach the client rather
+    than surfacing as a bare "server error"."""
+    from mmu.config import Settings
+
+    app = create_app(
+        retriever=StubRetriever(),
+        generator=None,
+        settings=Settings(generator_backend="no-such-backend"),
+    )
+    async with app_client(app) as client:
+        response = await client.post("/answer", json={"query": "q"})
+    assert response.status_code == 503
+    assert "no-such-backend" in response.json()["detail"]
 
 
 async def test_health_and_index_stats_without_an_index(

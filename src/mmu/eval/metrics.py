@@ -20,6 +20,7 @@ into a list of these.
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
@@ -58,22 +59,39 @@ class ClaimVerification:
 # --------------------------------------------------------------- 1. Answer Faithfulness
 
 
-def answer_faithfulness(claims: Sequence[ClaimVerification], *, is_refusal: bool) -> float:
+def answer_faithfulness(
+    claims: Sequence[ClaimVerification], *, refusal_is_correct: bool
+) -> float:
     """``AF = supported_claims / m`` over the atomic claims decomposed from an answer.
 
-    ``m == 0`` has exactly two possible causes and they must score oppositely:
-    the model correctly refused an unanswerable question (no claims to make is the
-    *correct* output) -> **1.0**; or the model produced an empty/degenerate answer that
-    happens to decompose into zero claims -> **0.0**. Scoring the latter as 1.0 would be
-    vacuous truth — an AF metric that rewards saying nothing is trivially gameable by a
-    model that just stops generating, which defeats the entire point of measuring
-    faithfulness. ``is_refusal`` must therefore be supplied by the caller (it is a
-    property of the answer text, e.g. ``generate/prompt.py``'s refusal detector — not of
-    the claims, since there are none to inspect).
+    ``m == 0`` has three possible causes and they do not all score the same, so this
+    takes ``refusal_is_correct`` — a judgment about whether abstaining was the right
+    output — rather than the merely syntactic "did the text look like a refusal":
+
+    * The model correctly declined: the question was unanswerable, or the retrieved
+      context genuinely lacked a required document and abstaining beat inventing an
+      answer. No claims to make is the *correct* output -> **1.0**.
+    * The model declined with the material in hand -> **0.0**. It had the required
+      document in context and refused anyway, which is a generation failure however
+      honest the wording.
+    * The model produced an empty or degenerate answer that happens to decompose into
+      zero claims -> **0.0**.
+
+    **Why this is not simply "was it a refusal".** It used to be, and the metric was
+    gameable in the worst possible direction: a model that refuses *every* question
+    scores a corpus AF of 1.000. Measured on this project's seed set, the generator
+    refused `single-002` — an "easy" single-document question whose required document
+    had been retrieved, at CP 1.00 — under two of three retrieval configurations, and
+    scored 1.00 for it each time. Faithfulness that rewards saying nothing is not
+    measuring faithfulness.
+
+    The caller owns the judgment because this module has no questions and no retrieval
+    results in it: correctness depends on the question's ``required_doc_ids`` and what
+    was actually retrieved, both of which live in ``eval/runner.py``.
     """
     m = len(claims)
     if m == 0:
-        return 1.0 if is_refusal else 0.0
+        return 1.0 if refusal_is_correct else 0.0
     supported = sum(1 for c in claims if c.supported)
     return supported / m
 
@@ -459,6 +477,89 @@ def context_utilization(
     return CURResult(cited=cur_cited, attr=cur_attr, tok=cur_tok, gap=cur_cited - cur_attr, k=k)
 
 
+# ------------------------------------------------------------------ paired comparison
+
+
+@dataclass(frozen=True)
+class SignTest:
+    """An exact two-sided sign test over per-question paired differences.
+
+    This is the only inferential statistic in the project, and it exists because the
+    unpaired ablation could not support one. Comparing two configurations by running
+    each end to end and differencing the corpus means confounds the configuration with
+    everything else that changed between the two runs — on this project's own measured
+    data, generator throughput varied 3x between sequential runs of the *same* model,
+    which swamped every real effect. Running both configurations on the same question,
+    back to back, makes each question its own control: the host, the model's loaded
+    state and the thermal situation are shared by both members of the pair, so their
+    difference is attributable to the configuration.
+
+    The sign test is chosen over a paired t-test deliberately. AF, CP, Cov and Cite are
+    bounded proportions over 6 questions, visibly non-normal and often tied at 1.0; a
+    t-test on six such values reports a precision it does not have. The sign test
+    assumes only that, under the null, a positive difference is as likely as a negative
+    one. The price is power, and :attr:`best_attainable_p` makes that price explicit.
+    """
+
+    #: Pairs with a non-tied difference. Ties are *excluded*, per the standard test —
+    #: which means this is usually smaller than the number of questions.
+    n_pairs: int
+    wins: int
+    losses: int
+    ties: int
+    #: ``2 * P(X >= max(wins, losses))`` for ``X ~ Binomial(n_pairs, 0.5)``, clamped to
+    #: 1.0. Exact, not normal-approximated: at these n the approximation is wrong.
+    p_two_sided: float
+    #: The p-value this test would report if *every* pair agreed in sign — the best
+    #: outcome the design can produce at this ``n_pairs``. It is printed next to the
+    #: result because at small n it is frequently above 0.05, and a test that *cannot*
+    #: reach significance has to say so rather than return a non-significant p and let
+    #: the reader infer "no effect". At n=6 it is 0.031; at n=5, 0.063 — unwinnable.
+    best_attainable_p: float
+
+    @property
+    def significant(self) -> bool:
+        """``p < 0.05``. Deliberately not used to pick a winner anywhere in the
+        reporting path — it gates whether a difference is *mentionable*, not which
+        configuration is better."""
+        return self.p_two_sided < 0.05
+
+    @property
+    def conclusive_possible(self) -> bool:
+        return self.best_attainable_p < 0.05
+
+
+def paired_sign_test(deltas: Sequence[float], *, epsilon: float = 0.0) -> SignTest:
+    """Exact two-sided sign test on ``deltas`` (one per question, ``b - a``).
+
+    ``epsilon`` is the tie threshold: a difference with ``abs(d) <= epsilon`` counts as
+    a tie and is dropped. It defaults to 0.0 so that only exact equality ties, which is
+    the right default for the metric columns (two configurations scoring a question
+    identically at 1.0 genuinely carries no sign information). For latency, pass a
+    threshold large enough to absorb measurement jitter rather than letting a 3ms
+    difference count as a win.
+    """
+    wins = sum(1 for d in deltas if d > epsilon)
+    losses = sum(1 for d in deltas if d < -epsilon)
+    ties = len(deltas) - wins - losses
+    n = wins + losses
+    if n == 0:
+        # No information at all: every pair tied. p=1.0, and the floor is 1.0 too —
+        # there is no n at which a test of zero pairs could have concluded anything.
+        return SignTest(n_pairs=0, wins=0, losses=0, ties=ties,
+                        p_two_sided=1.0, best_attainable_p=1.0)
+    extreme = max(wins, losses)
+    tail = sum(math.comb(n, i) for i in range(extreme, n + 1)) / (2 ** n)
+    return SignTest(
+        n_pairs=n,
+        wins=wins,
+        losses=losses,
+        ties=ties,
+        p_two_sided=min(1.0, 2 * tail),
+        best_attainable_p=min(1.0, 2 / (2 ** n)),
+    )
+
+
 # ----------------------------------------------------------------- marker_compliance
 
 
@@ -467,18 +568,51 @@ def context_utilization(
 MARKER_COMPLIANCE_FLOOR = 0.8
 
 
-def marker_compliance_rate(per_answer_compliance: Sequence[float]) -> float:
+def marker_compliance_rate(
+    per_answer_compliance: Sequence[float | None],
+) -> float | None:
     """Corpus-level fraction of answers with >=1 well-formed ``[Sn]`` marker
-    (``n <= k``). Each answer's own ``marker_compliance`` is 1.0 or 0.0 (see
-    ``core.models.Answer``); this is their mean."""
-    if not per_answer_compliance:
-        return 0.0
-    return sum(per_answer_compliance) / len(per_answer_compliance)
+    (``n <= k``), over the answers for which the question is *defined*.
+
+    Each answer's own ``marker_compliance`` is 1.0 or 0.0 (see
+    ``core.models.Answer``) — or ``None``, which this skips, exactly as
+    :func:`context_precision` is skipped for a question with no relevant set.
+
+    **Why ``None`` has to exist here.** A correct refusal cites nothing, by design:
+    ``questions.jsonl`` states that "a correct refusal must score 1.0 on Answer
+    Faithfulness", and the answer it is supposed to produce has no ``[Sn]`` marker in
+    it because there is no source to point at. Scoring that 0.0 on a metric about
+    citing does not measure a failure to cite; it measures the question's shape. The
+    damage is not cosmetic, because this rate gates other columns: with one unanswerable
+    question in six the attainable maximum is 0.833, so a single genuinely
+    dropped-marker answer lands at 0.667 and trips
+    :data:`MARKER_COMPLIANCE_FLOOR` — at which point ``report.py`` declares ``Cite``,
+    ``XDR`` and every CUR number unreliable *because the model refused correctly*.
+    Measured on this project's own three-arm ablation: the rate read 0.833/0.667/0.667
+    and flagged two arms, where the defined-only rate is 1.0/0.8/0.8 and flags none.
+
+    Returns ``None`` when no answer was measurable (every one was a correct refusal).
+    That is not a rate of zero — zero would assert that the model failed to cite, when
+    in fact nothing in the run was ever asked to.
+    """
+    defined = [c for c in per_answer_compliance if c is not None]
+    if not defined:
+        return None
+    return sum(defined) / len(defined)
 
 
-def is_marker_compliance_reliable(rate: float) -> bool:
+def is_marker_compliance_reliable(rate: float | None) -> bool:
     """``False`` below :data:`MARKER_COMPLIANCE_FLOOR`. When this is ``False``, the
     report must print a loud warning and still show ``Cite``, ``XDR`` and every CUR
     variant rather than hiding them — the fragility must be surfaced, not smoothed over
-    by silently omitting the columns."""
+    by silently omitting the columns.
+
+    ``None`` (nothing measurable) is ``True``, because there is no marker-derived number
+    in such a run for the unreliability to be *about* — every answer correctly cited
+    nothing. Callers must still distinguish the two in what they print: "reliable" here
+    means "no warning is warranted", not "markers were verified", and ``report.py``
+    branches on ``None`` before it consults this.
+    """
+    if rate is None:
+        return True
     return rate >= MARKER_COMPLIANCE_FLOOR

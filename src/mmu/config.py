@@ -17,6 +17,62 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _discover_gemini_keys(env_file: Path | None = None) -> tuple[str, ...]:
+    """Collect Gemini keys written under Google's own names rather than MMU's.
+
+    ``model_config`` sets ``env_prefix="MMU_"`` with ``extra="ignore"``, so a ``.env``
+    holding the names Google's console hands you — ``GEMINI_API_KEY``, or
+    ``GEMINI_API_KEY_1..N`` when you hold several to widen a per-key free-tier quota —
+    is silently ignored: not an error, just no keys, and the backend then reports "no
+    key configured" while the user is looking straight at seven of them. ``anthropic.py``
+    documents the same trap for ``ANTHROPIC_API_KEY``; this function is the one place
+    that resolves it instead of only warning about it.
+
+    ``MMU_GEMINI_API_KEYS`` (comma-separated) remains the canonical spelling and wins
+    outright — this runs only when that is unset. Numbered keys are returned in numeric
+    order so rotation is reproducible across processes, which matters because a report
+    that names "key 3" has to mean the same key on the next run.
+
+    ``env_file`` is a parameter rather than a constant so a test can point it at a
+    fixture instead of the developer's real ``.env``; reading the repo file by default
+    made the discovery order depend on whoever ran the suite.
+    """
+    found: dict[int, str] = {}
+    unnumbered: list[str] = []
+
+    def absorb(name: str, value: str) -> None:
+        value = value.strip().strip("'\"")
+        if not value:
+            return
+        suffix = name[len("GEMINI_API_KEY") :]
+        if suffix.startswith("_") and suffix[1:].isdigit():
+            found[int(suffix[1:])] = value
+        elif not suffix:
+            unnumbered.append(value)
+
+    for name, value in os.environ.items():
+        if name.startswith("GEMINI_API_KEY"):
+            absorb(name, value)
+
+    # The .env file is read directly: pydantic-settings applies env_prefix when it
+    # parses that file, so these bare names never reach Settings through it.
+    env_file = _REPO_ROOT / ".env" if env_file is None else env_file
+    try:
+        for raw in env_file.read_text(encoding="utf-8").splitlines():
+            line = raw.strip().removeprefix("export ").strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            name, _, value = line.partition("=")
+            name = name.strip()
+            if name.startswith("GEMINI_API_KEY") and name not in os.environ:
+                absorb(name, value)
+    except OSError:
+        pass
+
+    ordered = [found[i] for i in sorted(found)] + unnumbered
+    return tuple(dict.fromkeys(ordered))
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="MMU_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
@@ -83,7 +139,7 @@ class Settings(BaseSettings):
     search_concurrency: int = Field(default_factory=lambda: os.cpu_count() or 4)
 
     # --- generation ----------------------------------------------------------------
-    generator_backend: str = "ollama"          # "ollama" | "anthropic"
+    generator_backend: str = "ollama"          # "ollama" | "anthropic" | "gemini"
     ollama_host: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen2.5:7b-instruct-q4_K_M"
     ollama_fast_model: str = "llama3.2:3b"
@@ -97,6 +153,27 @@ class Settings(BaseSettings):
     ollama_num_ctx: int = 4096
     anthropic_model: str = "claude-sonnet-5"
     anthropic_api_key: str | None = None
+
+    #: Pinned deliberately, not `gemini-flash-latest`. A moving alias silently changes
+    #: the model under a benchmark, which makes two runs incomparable while every number
+    #: still looks valid. Both carry a 1,048,576-token input window — 256x
+    #: `ollama_num_ctx` — so the context-budget trap that governs the local backend does
+    #: not bind here; `context_budget_warning` is checked only for ollama.
+    #:
+    #: These two are chosen from what `:generateContent` actually served on 2026-10-13,
+    #: which is *not* what `ListModels` advertises: `gemini-2.5-flash` and
+    #: `gemini-2.5-pro` are both listed and both answer 404 "no longer available to new
+    #: users", while the full-flash tier (`gemini-3.5`/`3.6`/`3.7`/`3.8-flash` and
+    #: `gemini-flash-latest`) answered 503 "experiencing high demand" on every attempt.
+    #: Pick a stronger model here when that tier frees up — the backend needs no change,
+    #: and `gemini.py` already copes with the lite tier's refusal of `thinkingConfig`.
+    gemini_model: str = "gemini-3.1-flash-lite"
+    gemini_fast_model: str = "gemini-3.5-flash-lite"
+    gemini_host: str = "https://generativelanguage.googleapis.com"
+    #: Several keys are a quota strategy, not redundancy: Gemini's free tier is limited
+    #: per key and per minute, and a benchmark issues its requests in a burst. See
+    #: `_discover_gemini_keys` for why bare GEMINI_API_KEY_N names are picked up too.
+    gemini_api_keys: tuple[str, ...] = Field(default_factory=_discover_gemini_keys)
     temperature: float = 0.0                   # a benchmark must be reproducible
     max_tokens: int = 1024
     request_timeout_s: float = 300.0
@@ -114,6 +191,19 @@ class Settings(BaseSettings):
     #: wrong answer score worse than a slow correct one. NOT a CLI flag: LpQU is not
     #: comparable across runs with different eps, so it is printed, never varied.
     lpqu_epsilon: float = 0.01
+
+    @field_validator("gemini_api_keys", mode="before")
+    @classmethod
+    def _split_keys(cls, v: object) -> object:
+        """Accept ``MMU_GEMINI_API_KEYS=a,b,c``.
+
+        Without this, pydantic-settings parses a value destined for a tuple field as
+        JSON, so the natural comma-separated spelling raises a parse error that names
+        JSON — which is a confusing thing to be told when you were setting an API key.
+        """
+        if isinstance(v, str):
+            return tuple(part.strip() for part in v.split(",") if part.strip())
+        return v
 
     @field_validator("embed_device")
     @classmethod

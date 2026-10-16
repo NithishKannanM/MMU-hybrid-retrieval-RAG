@@ -184,7 +184,14 @@ def cmd_eval_run(args) -> int:
 
     def on_question(run) -> None:
         if args.verbose:
-            print(f"  {run.question_id:<18} AF={run.af:.2f} CP={run.cp:.2f} "
+            # CP is None, not 0.0, for a question with no relevant set — see
+            # QuestionRun.cp in eval/runner.py. Formatting it with `:.2f` raised
+            # TypeError and killed the whole run at the unanswerable question, after
+            # every other question had already been generated and paid for. "--" here
+            # matches report.py's `cell()`: a dash reads as "not applicable", which is
+            # what it is, where nan would read as a computation that went wrong.
+            cp = f"{run.cp:.2f}" if run.cp is not None else "  --"
+            print(f"  {run.question_id:<18} AF={run.af:.2f} CP={cp} "
                   f"t={run.latency_s:.1f}s", file=sys.stderr)
 
     result = asyncio.run(
@@ -203,12 +210,108 @@ def cmd_eval_run(args) -> int:
     return 0
 
 
+def _parse_arm(spec: str):
+    """``label=dense,sparse`` -> ``Arm("label", ("dense", "sparse"))``."""
+    from mmu.eval.runner import Arm
+
+    label, _, channels = spec.partition("=")
+    label = label.strip()
+    chans = tuple(c.strip() for c in channels.split(",") if c.strip())
+    if not label or not chans:
+        raise ValueError(
+            f"--arm expects label=channel[,channel], got {spec!r} "
+            f"(e.g. --arm hybrid=dense,sparse)"
+        )
+    return Arm(label, chans)
+
+
+def cmd_eval_ablate(args) -> int:
+    """Run several retrieval configurations question-major in one process.
+
+    This is the ablation that can support a statistical claim. ``eval run`` executed
+    three times writes three reports whose latency columns differ mostly by what the
+    host was doing, which is how this project initially read a 3x retrieval speedup off
+    pure generator variance. Here every arm answers the same question seconds apart on
+    the same loaded model, so the differences are paired and ``eval compare`` can print
+    an exact sign test over them.
+    """
+    from mmu.eval import report as report_mod
+    from mmu.eval.questions import load_questions
+    from mmu.eval.runner import DEFAULT_ARMS, run_interleaved
+    from mmu.generate.registry import build_generator
+    from mmu.retrieve.build import load_index
+    from mmu.retrieve.hybrid import HybridRetriever
+
+    settings = get_settings()
+    try:
+        arms = tuple(_parse_arm(a) for a in args.arm) if args.arm else DEFAULT_ARMS
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    questions = load_questions(settings.questions_path)
+    embedder = _embedder(settings)
+    store, dense, sparse = load_index(settings.index_dir, embedder)
+    retriever = HybridRetriever(store, dense, sparse, embedder)
+
+    try:
+        generator = build_generator(settings, args.generator)
+    except Exception as exc:  # noqa: BLE001 — actionable message, not a traceback
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    judge = _build_judge(settings, args.judge)
+    labels = [a.label for a in arms]
+    print(
+        f"{len(questions)} question(s) x {len(arms)} arm(s) = "
+        f"{len(questions) * len(arms)} generations, interleaved: {', '.join(labels)}"
+    )
+
+    def on_question(arm_label, run) -> None:
+        if args.verbose:
+            cp = f"{run.cp:.2f}" if run.cp is not None else "  --"
+            print(
+                f"  [{run.arm_index}] {arm_label:<12} {run.question_id:<18} "
+                f"AF={run.af:.2f} CP={cp} t={run.service_s:.1f}s",
+                file=sys.stderr,
+            )
+
+    reports = asyncio.run(
+        run_interleaved(
+            questions, retriever, generator, judge, settings,
+            arms=arms, k=args.k, rrf_k=args.rrf_k,
+            cache_path=settings.cache_dir / "judgments.jsonl",
+            on_question=on_question,
+        )
+    )
+
+    out_dir = Path(args.out_dir)
+    paths = []
+    for label in labels:
+        path = out_dir / f"{label}.json"
+        report_mod.save(reports[label], path)
+        paths.append(path)
+
+    as_dicts = [report_mod.load(p) for p in paths]
+    print()
+    print(report_mod.render_comparison(as_dicts, labels))
+    print()
+    print(report_mod.render_paired(as_dicts, labels))
+    print(f"\nwritten to {out_dir}/" + "{" + ",".join(labels) + "}.json")
+    return 0
+
+
 def cmd_eval_compare(args) -> int:
     from mmu.eval import report as report_mod
 
     reports = [report_mod.load(Path(p)) for p in args.reports]
     labels = [Path(p).stem for p in args.reports]
     print(report_mod.render_comparison(reports, labels))
+    # Only for a genuine interleaved cohort; render_paired refuses otherwise, and that
+    # refusal is worth printing rather than swallowing — it names the reason.
+    if report_mod.paired_cohort_error(reports, labels) is None:
+        print()
+        print(report_mod.render_paired(reports, labels))
     return 0
 
 
@@ -249,6 +352,21 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--out", default=None)
     run.add_argument("--verbose", "-v", action="store_true")
     run.set_defaults(func=cmd_eval_run)
+
+    ablate = ev.add_parser(
+        "ablate",
+        help="run several channel configurations interleaved, question-major, and pair them",
+    )
+    ablate.add_argument("--arm", action="append", default=None,
+                        help="label=dense,sparse — repeatable; defaults to the "
+                             "standard hybrid/dense-only/sparse-only three-way")
+    ablate.add_argument("--judge", default="local", choices=["local", "ollama", "anthropic"])
+    ablate.add_argument("--k", type=int, default=None)
+    ablate.add_argument("--rrf-k", dest="rrf_k", type=int, default=None)
+    ablate.add_argument("--generator", default=None, help="alias: default | fast")
+    ablate.add_argument("--out-dir", dest="out_dir", default="reports/ablate")
+    ablate.add_argument("--verbose", "-v", action="store_true")
+    ablate.set_defaults(func=cmd_eval_ablate)
 
     compare = ev.add_parser("compare", help="print runs side by side; never names a winner")
     compare.add_argument("reports", nargs="+")

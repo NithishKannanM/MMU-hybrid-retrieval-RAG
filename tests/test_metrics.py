@@ -36,30 +36,40 @@ def test_af_supported_unsupported_mix() -> None:
         ClaimVerification(claim="b", supported=False),
         ClaimVerification(claim="c", supported=True),
     ]
-    assert answer_faithfulness(claims, is_refusal=False) == pytest.approx(2 / 3)
+    assert answer_faithfulness(claims, refusal_is_correct=False) == pytest.approx(2 / 3)
 
 
-def test_af_refusal_with_zero_claims_scores_one() -> None:
-    assert answer_faithfulness([], is_refusal=True) == 1.0
+def test_af_correct_refusal_with_zero_claims_scores_one() -> None:
+    assert answer_faithfulness([], refusal_is_correct=True) == 1.0
+
+
+def test_af_unjustified_refusal_with_zero_claims_scores_zero() -> None:
+    """The parameter is a *judgment*, not "did the text look like a refusal", and this
+    is the case that forced the distinction. A model that declines a question whose
+    required document was sitting in its context has failed to answer, however honestly
+    it worded the decline. Keyed on refusal-shape alone, a model that refuses every
+    question scored a corpus AF of 1.000 — measured, on `single-002`, under two of the
+    three retrieval configurations."""
+    assert answer_faithfulness([], refusal_is_correct=False) == 0.0
 
 
 def test_af_empty_degenerate_with_zero_claims_scores_zero() -> None:
     # Never award vacuous truth: an empty/degenerate answer that isn't a refusal must
     # not score as if it had said something true.
-    assert answer_faithfulness([], is_refusal=False) == 0.0
+    assert answer_faithfulness([], refusal_is_correct=False) == 0.0
 
 
 def test_af_all_supported_is_one() -> None:
     claims = [ClaimVerification(claim="a", supported=True)] * 4
-    assert answer_faithfulness(claims, is_refusal=False) == 1.0
+    assert answer_faithfulness(claims, refusal_is_correct=False) == 1.0
 
 
 def test_corpus_af_is_macro_mean_not_micro_mean() -> None:
     # q1: one claim, supported -> AF=1.0. q2: nine claims, none supported -> AF=0.0.
     q1_claims = [ClaimVerification(claim="only", supported=True)]
     q2_claims = [ClaimVerification(claim=f"c{i}", supported=False) for i in range(9)]
-    af1 = answer_faithfulness(q1_claims, is_refusal=False)
-    af2 = answer_faithfulness(q2_claims, is_refusal=False)
+    af1 = answer_faithfulness(q1_claims, refusal_is_correct=False)
+    af2 = answer_faithfulness(q2_claims, refusal_is_correct=False)
     assert af1 == 1.0
     assert af2 == 0.0
 
@@ -330,6 +340,37 @@ def test_cur_k_zero_is_all_zero() -> None:
 
 def test_marker_compliance_rate_is_mean() -> None:
     assert marker_compliance_rate([1.0, 1.0, 0.0, 0.0]) == pytest.approx(0.5)
+
+
+def test_marker_compliance_rate_skips_undefined_answers() -> None:
+    """None means "this answer was never supposed to carry a marker" (a correct
+    refusal), and must be excluded from the denominator rather than scored 0.0 —
+    the same convention context_precision uses for a question with no relevant set."""
+    assert marker_compliance_rate([1.0, 1.0, None]) == pytest.approx(1.0)
+    assert marker_compliance_rate([1.0, 0.0, None, None]) == pytest.approx(0.5)
+
+
+def test_the_measured_case_that_this_exclusion_fixes() -> None:
+    """Six questions, one of them an unanswerable the model correctly refused, one a
+    genuine dropped-marker failure. Counting the refusal as 0.0 reads 0.667 and trips
+    the 0.8 floor, which makes report.py declare Cite/XDR/CUR unreliable *because the
+    model refused correctly*. Excluding it reads 0.8 and clears. These were the real
+    dense-only and sparse-only arms of the 2026-10-13 ablation."""
+    counted_as_zero = [1.0, 1.0, 1.0, 1.0, 0.0, 0.0]        # refusal scored as a failure
+    defined_only = [1.0, 1.0, 1.0, 1.0, 0.0, None]          # refusal excluded
+    assert marker_compliance_rate(counted_as_zero) == pytest.approx(0.667, abs=1e-3)
+    assert is_marker_compliance_reliable(marker_compliance_rate(counted_as_zero)) is False
+    assert marker_compliance_rate(defined_only) == pytest.approx(0.8)
+    assert is_marker_compliance_reliable(marker_compliance_rate(defined_only)) is True
+
+
+def test_a_rate_with_nothing_measurable_is_none_not_zero() -> None:
+    """Every answer a correct refusal. Zero would assert the model failed to cite; the
+    truth is that nothing in the run was ever asked to."""
+    assert marker_compliance_rate([None, None]) is None
+    assert marker_compliance_rate([]) is None
+    # And no warning is warranted, because no marker-derived number exists to be wrong.
+    assert is_marker_compliance_reliable(None) is True
 
 
 def test_marker_compliance_reliability_floor() -> None:

@@ -21,11 +21,13 @@ serve:
 eval:            ## offline deterministic run
 	uv run mmu eval run --judge local --out reports/local.json
 
-ablate:          ## the experiment that justifies the architecture
-	uv run mmu eval run --channels dense  --judge local --out reports/dense-only.json
-	uv run mmu eval run --channels sparse --judge local --out reports/sparse-only.json
-	uv run mmu eval run --judge local --out reports/hybrid.json
-	uv run mmu eval compare reports/hybrid.json reports/dense-only.json reports/sparse-only.json
+ablate:          ## the experiment that justifies the architecture (interleaved + paired)
+# One process, question-major: every arm answers the same question back to back, so the
+# differences are paired and `eval ablate` can print an exact sign test over them. This
+# target used to be three sequential `eval run` calls differenced by `eval compare`; that
+# version reported a 3x latency win for hybrid that was entirely generator variance
+# between the runs (see README, "Generation (measured)"). Do not restore it.
+	uv run mmu eval ablate --judge local --out-dir reports/ablate --verbose
 
 clean:
 	rm -rf data/.index data/.cache reports/*.json
