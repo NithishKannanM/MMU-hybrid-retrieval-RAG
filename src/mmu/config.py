@@ -133,6 +133,19 @@ class Settings(BaseSettings):
     dense_weight: float = 1.0
     sparse_weight: float = 1.0
 
+    # --- reranking -----------------------------------------------------------------
+    #: Cross-encoder used when a reranking arm is selected. Measured headroom at
+    #: k=8/depth=32 on the seed corpus is recall 0.469 -> 0.817, so this is the one
+    #: retrieval change with a demonstrated ceiling worth paying for; see
+    #: `scripts/rerank_headroom.py`.
+    rerank_model: str = "BAAI/bge-reranker-v2-m3"
+    rerank_device: str = "cpu"
+    rerank_batch_size: int = 16
+    #: Truncation length for each (query, chunk) pair. Chunks are 384 tokens by default
+    #: and the query is short, so 512 holds a whole pair; raising it costs quadratic
+    #: attention for text the pair does not contain.
+    rerank_max_length: int = 512
+
     #: Bounds concurrent retrievals. NOT redundant with asyncio.to_thread: to_thread
     #: keeps the event loop responsive but does not bound parallelism, so N in-flight
     #: requests become N threads contending for the same cores. See api/deps.py.

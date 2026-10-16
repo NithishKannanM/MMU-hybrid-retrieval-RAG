@@ -26,6 +26,8 @@ from mmu.core.models import RetrievedChunk
 from mmu.eval import metrics
 from mmu.eval.judge import CachingJudge, Judge
 from mmu.eval.metrics import ClaimVerification, CURResult, RankMetrics, XDRResult
+from mmu.retrieve.registry import build_reranker
+from mmu.retrieve.rerank import Reranker, rerank as rerank_result
 from mmu.eval.questions import Question
 from mmu.generate.base import Generator, GeneratorUnavailable
 from mmu.generate.prompt import (
@@ -69,6 +71,11 @@ class QuestionRun:
     marker_compliance: float | None
     n_claims: int
     n_supported: int
+    #: Cross-encoder time, 0.0 when no reranker ran. Its own field, and counted inside
+    #: :attr:`service_s`, because a reranking arm's whole claim is that the shorter
+    #: prompt it buys saves more generation time than the cross-encoder costs — and that
+    #: claim is unfalsifiable if the cost is hidden inside `retrieval_s`.
+    rerank_s: float = 0.0
     degraded_claims: int = 0
     invented_spans: int = 0
     error: str | None = None
@@ -99,7 +106,7 @@ class QuestionRun:
         comparison must use, and it is also the only part of the two that a served
         request would actually pay.
         """
-        return self.retrieval_s + self.generate_s
+        return self.retrieval_s + self.rerank_s + self.generate_s
 
 
 @dataclass
@@ -131,6 +138,15 @@ class RunReport:
     #: sequentially and are therefore not paired at all.
     arm_label: str = ""
     interleaved_with: tuple[str, ...] = ()
+    #: The reranker alias this arm used, or "" for none. Part of the configuration for
+    #: the same reason `k` and `rrf_k` are: two reports are not comparable unless they
+    #: agree about it, and a reranked run that does not say so is a result with its
+    #: cause missing.
+    rerank: str = ""
+    #: Candidate pool the reranker reordered. Meaningless without `rerank`, and recorded
+    #: because the reranker's ceiling is recall@depth — a reranked arm's result cannot be
+    #: interpreted without knowing how much it was allowed to see.
+    rerank_depth: int = 0
 
     # aggregates
     af: float = 0.0
@@ -195,6 +211,17 @@ async def _verify_claims(
     return verified, degraded, invented
 
 
+def retriever_depth(settings: Settings, k: int) -> int:
+    """The candidate pool a reranker sees, defaulting to the project's over-fetch depth.
+
+    Reusing `Settings.resolved_depth` rather than inventing a second notion of depth:
+    the pool the reranker reorders should be the pool fusion already produces, or the
+    reranked arm would differ from its control in two ways at once and the comparison
+    would not isolate reranking.
+    """
+    return settings.resolved_depth(k)
+
+
 async def run_question(
     question: Question,
     retriever: HybridRetriever,
@@ -207,6 +234,8 @@ async def run_question(
     rrf_k: int,
     cache_path: Path | None = None,
     n_relevant_total: int | None = None,
+    reranker: Reranker | None = None,
+    rerank_depth: int | None = None,
 ) -> QuestionRun:
     started = time.perf_counter()
     if cache_path is not None:
@@ -214,10 +243,24 @@ async def run_question(
 
     # to_thread for the same reason the API does it: search is CPU-bound and blocking,
     # and the judge calls interleaved with it are network I/O that should not be stalled.
+    # With a reranker, retrieval fetches the *candidate pool* and the reranker decides
+    # which k survive. Without one, it fetches k directly. `fetch_k` is therefore the
+    # pool size, not the context size, and the two are only equal in the unreranked arm.
+    fetch_k = k if reranker is None else (rerank_depth or retriever_depth(settings, k))
     result = await asyncio.to_thread(
-        retriever.search, question.question, k=k, channels=list(channels), rrf_k=rrf_k
+        retriever.search,
+        question.question,
+        k=fetch_k,
+        depth=fetch_k if reranker is not None else None,
+        channels=list(channels),
+        rrf_k=rrf_k,
     )
     retrieval_s = result.timings.total_ms / 1000
+
+    rerank_s = 0.0
+    if reranker is not None:
+        result = await asyncio.to_thread(rerank_result, result, reranker, k=k)
+        rerank_s = result.timings.rerank_ms / 1000
 
     t = time.perf_counter()
     try:
@@ -364,6 +407,7 @@ async def run_question(
         ),
         n_claims=len(claims),
         n_supported=sum(1 for c in claims if c.supported),
+        rerank_s=rerank_s,
         degraded_claims=degraded,
         invented_spans=invented,
         error=error,
@@ -448,10 +492,25 @@ async def run_eval(
 
 @dataclass(frozen=True)
 class Arm:
-    """One configuration under test in an interleaved run."""
+    """One configuration under test in an interleaved run.
+
+    ``rerank`` is a *registry alias*, not a model id — see
+    :mod:`mmu.retrieve.registry` for why that distinction is a boundary and not a
+    style choice. ``None`` means this arm deliberately does not rerank.
+
+    ``k`` and ``depth`` override the run defaults for this arm alone. ``k`` is what
+    makes the shrink-the-context experiment expressible: an arm can keep 3 chunks where
+    its control keeps 8. ``depth`` should be set to the **same** value on every arm in a
+    reranking comparison, because `Settings.resolved_depth` is a function of k
+    (``max(4k, 20)``) — so leaving it unset would hand a k=3 arm a 20-candidate pool and
+    a k=8 arm a 32-candidate pool, and the arms would then differ in two ways at once.
+    """
 
     label: str
     channels: tuple[str, ...]
+    rerank: str | None = None
+    k: int | None = None
+    depth: int | None = None
 
 
 #: The standard three-way retrieval ablation, interleaved. ``hybrid`` is first so it is
@@ -460,6 +519,26 @@ DEFAULT_ARMS: tuple[Arm, ...] = (
     Arm("hybrid", ("dense", "sparse")),
     Arm("dense-only", ("dense",)),
     Arm("sparse-only", ("sparse",)),
+)
+
+#: The reranking comparison. All three arms share ``depth=32`` so the only differences
+#: are whether the cross-encoder runs and how many chunks reach the prompt:
+#:
+#: - ``hybrid-k8``        — the control: today's production configuration.
+#: - ``hybrid-rerank-k8`` — same context size, better-chosen contents. Isolates
+#:   reranking's effect on *quality* with prompt length held constant.
+#: - ``hybrid-rerank-k3`` — the one that could pay for itself. If recall@3 after
+#:   reranking matches recall@8 without it, the prompt shrinks by five chunks, and
+#:   since generation is ~99% of wall clock that is the only lever that moves
+#:   end-to-end latency.
+#:
+#: Splitting quality and length into two arms is deliberate: a single
+#: "rerank and shrink" arm that came back faster and worse could not say which change
+#: did which.
+RERANK_ARMS: tuple[Arm, ...] = (
+    Arm("hybrid-k8", ("dense", "sparse"), k=8, depth=32),
+    Arm("hybrid-rerank-k8", ("dense", "sparse"), rerank="default", k=8, depth=32),
+    Arm("hybrid-rerank-k3", ("dense", "sparse"), rerank="default", k=3, depth=32),
 )
 
 
@@ -523,7 +602,7 @@ async def run_interleaved(
                 retriever.store.manifest.embed_model if retriever.store.manifest else ""
             ),
             channels=tuple(arm.channels),
-            k=k,
+            k=arm.k or k,
             rrf_k=rrf_k,
             weights=(settings.weight_af, settings.weight_cp, settings.weight_xdr),
             epsilon=settings.lpqu_epsilon,
@@ -531,19 +610,33 @@ async def run_interleaved(
             n_chunks=len(retriever.store),
             arm_label=arm.label,
             interleaved_with=cohort,
+            rerank=arm.rerank or "",
+            rerank_depth=(arm.depth or 0) if arm.rerank else 0,
         )
         for arm in arms
     }
 
     n_relevant = relevant_chunk_counts(questions, retriever)
+    # One reranker instance per distinct alias, built once before the loop. A
+    # cross-encoder is ~568M parameters: constructing it per question-arm would load the
+    # weights 90 times over a 30-question run, and the load time would land inside
+    # `rerank_s` and be reported as the cross-encoder's per-query cost.
+    rerankers: dict[str, Reranker | None] = {}
+    for arm in arms:
+        if arm.rerank not in rerankers:
+            rerankers[arm.rerank] = build_reranker(settings, arm.rerank)
+
     for i, question in enumerate(questions):
         shift = i % len(arms)
         rotated = list(arms[shift:]) + list(arms[:shift])
         for position, arm in enumerate(rotated):
             run = await run_question(
                 question, retriever, generator, judge, settings,
-                k=k, channels=arm.channels, rrf_k=rrf_k, cache_path=cache_path,
+                k=arm.k or k, channels=arm.channels, rrf_k=rrf_k,
+                cache_path=cache_path,
                 n_relevant_total=n_relevant.get(question.id),
+                reranker=rerankers[arm.rerank],
+                rerank_depth=arm.depth,
             )
             run = replace(run, arm_label=arm.label, arm_index=position)
             reports[arm.label].runs.append(run)

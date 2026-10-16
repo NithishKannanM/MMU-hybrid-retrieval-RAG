@@ -61,6 +61,11 @@ def render(report: RunReport, *, verbose: bool = False) -> str:
         f"corpus: {report.n_documents} docs / {report.n_chunks} chunks   "
         f"questions: {len(report.runs)} (XDR set: {report.xdr_n})   "
         f"k={report.k}   rrf_k={report.rrf_k}   channels={'+'.join(report.channels)}"
+        + (
+            f"   rerank={report.rerank} over {report.rerank_depth} candidates"
+            if report.rerank
+            else "   rerank=none"
+        )
     )
     lines.append(
         f"judge: {report.judge}   model: {report.model}   embed: {report.embed_model or 'n/a'}"

@@ -53,6 +53,12 @@ class RetrievedChunk:
     rrf_score: float
     dense_rank: int | None = None    # 1-based rank within the dense channel, or None
     sparse_rank: int | None = None   # 1-based rank within the sparse channel, or None
+    #: Cross-encoder relevance score, set only when a reranker ran. ``None`` means no
+    #: reranker was applied — deliberately distinguishable from a reranker that ran and
+    #: scored this chunk 0.0. Kept *alongside* ``rrf_score`` rather than overwriting it
+    #: so a promotion is auditable: both the fused score that put the chunk in the
+    #: candidate pool and the score that lifted it into the context remain visible.
+    rerank_score: float | None = None
 
     # Convenience passthroughs — the API and the metrics both address chunks by these,
     # and reaching through `.chunk.` at every call site obscures the metric formulas.
@@ -94,6 +100,12 @@ class Timings:
     dense_ms: float = 0.0
     sparse_ms: float = 0.0
     fuse_ms: float = 0.0
+    #: Cross-encoder reranking, when a reranker ran. Its own line and not folded into
+    #: `fuse_ms`: it is the one retrieval cost that scales with the candidate pool
+    #: rather than with the index, and a reranking arm is only worth its latency if the
+    #: shorter prompt it enables saves more than this. Charging it to the wrong stage is
+    #: how the project previously reported a 3x speedup that did not exist.
+    rerank_ms: float = 0.0
     generate_ms: float = 0.0
     total_ms: float = 0.0
 

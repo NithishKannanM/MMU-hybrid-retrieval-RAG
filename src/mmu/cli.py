@@ -211,18 +211,52 @@ def cmd_eval_run(args) -> int:
 
 
 def _parse_arm(spec: str):
-    """``label=dense,sparse`` -> ``Arm("label", ("dense", "sparse"))``."""
+    """``label=dense,sparse[:rerank=alias][:k=N][:depth=N]`` -> an :class:`Arm`.
+
+    The optional suffixes are what make a reranking arm expressible on the command
+    line. ``rerank`` takes a registry *alias*, never a model id — see
+    :mod:`mmu.retrieve.registry`.
+    """
     from mmu.eval.runner import Arm
 
-    label, _, channels = spec.partition("=")
+    head, *options = spec.split(":")
+    label, _, channels = head.partition("=")
     label = label.strip()
     chans = tuple(c.strip() for c in channels.split(",") if c.strip())
     if not label or not chans:
         raise ValueError(
             f"--arm expects label=channel[,channel], got {spec!r} "
-            f"(e.g. --arm hybrid=dense,sparse)"
+            f"(e.g. --arm hybrid=dense,sparse or "
+            f"--arm reranked=dense,sparse:rerank=default:k=3:depth=32)"
         )
-    return Arm(label, chans)
+
+    rerank: str | None = None
+    k: int | None = None
+    depth: int | None = None
+    for option in options:
+        name, _, value = option.partition("=")
+        name, value = name.strip(), value.strip()
+        if not value:
+            raise ValueError(f"--arm option {option!r} needs a value, in {spec!r}")
+        if name == "rerank":
+            rerank = value
+        elif name in ("k", "depth"):
+            try:
+                number = int(value)
+            except ValueError:
+                raise ValueError(f"--arm {name} must be an integer, got {value!r}") from None
+            if number < 1:
+                raise ValueError(f"--arm {name} must be >= 1, got {number}")
+            if name == "k":
+                k = number
+            else:
+                depth = number
+        else:
+            raise ValueError(
+                f"unknown --arm option {name!r} in {spec!r}; "
+                f"valid options are rerank, k, depth"
+            )
+    return Arm(label, chans, rerank=rerank, k=k, depth=depth)
 
 
 def cmd_eval_ablate(args) -> int:
@@ -237,14 +271,19 @@ def cmd_eval_ablate(args) -> int:
     """
     from mmu.eval import report as report_mod
     from mmu.eval.questions import load_questions
-    from mmu.eval.runner import DEFAULT_ARMS, run_interleaved
+    from mmu.eval.runner import DEFAULT_ARMS, RERANK_ARMS, run_interleaved
     from mmu.generate.registry import build_generator
     from mmu.retrieve.build import load_index
     from mmu.retrieve.hybrid import HybridRetriever
 
     settings = get_settings()
     try:
-        arms = tuple(_parse_arm(a) for a in args.arm) if args.arm else DEFAULT_ARMS
+        if args.arm:
+            arms = tuple(_parse_arm(a) for a in args.arm)
+        elif getattr(args, "rerank", False):
+            arms = RERANK_ARMS
+        else:
+            arms = DEFAULT_ARMS
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
@@ -365,6 +404,11 @@ def build_parser() -> argparse.ArgumentParser:
     ablate.add_argument("--rrf-k", dest="rrf_k", type=int, default=None)
     ablate.add_argument("--generator", default=None, help="alias: default | fast")
     ablate.add_argument("--out-dir", dest="out_dir", default="reports/ablate")
+    ablate.add_argument(
+        "--rerank", action="store_true",
+        help="use the reranking cohort (hybrid-k8 / hybrid-rerank-k8 / hybrid-rerank-k3) "
+             "instead of the channel ablation; ignored when --arm is given",
+    )
     ablate.add_argument("--verbose", "-v", action="store_true")
     ablate.set_defaults(func=cmd_eval_ablate)
 
