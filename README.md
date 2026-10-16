@@ -39,6 +39,11 @@ entirely by only ever looking at rank position.
 Measured on the seed corpus: 3 documents, 378 chunks (gdpr 271, national-law 100,
 company-policy 7). `k=8`, `depth=32`, `rrf_k=60`, BGE-M3 dense + BM25Okapi.
 
+Every number in this section was measured over the **6-question seed set**. The
+question set is now 30 questions; see the note under the ablation table. Nothing here
+has been re-measured against it, and nothing here has been edited to look as though
+it was.
+
 Retrieval (measured):
 
 - Coverage (required docs present in context) = **1.000** on all 3 cross-document
@@ -92,9 +97,17 @@ sparse-only       0.800  0.691  1.000  0.667  0.667  0.500   0.354   0.000  56.3
 respectively, the rest being refusals where the metric is undefined (see below). No
 column in this table is flagged unreliable.
 
-**Read almost nothing into the differences between those rows.** At n=6 the 95%
-noise band on any proportion is ±0.40, and no gap in that table comes close. The
-ablation is reported because the *shape* of the comparison is the experiment.
+**Read almost nothing into the differences between those rows.** That run was
+measured over the **6-question seed set**, where the 95% noise band on any proportion
+is ±0.40, and no gap in the table comes close. The ablation is reported because the
+*shape* of the comparison is the experiment.
+
+> **The question set has since been expanded to 30 questions** (14 cross-document,
+> 11 single-document, 5 unanswerable) specifically to lift that ceiling: the best
+> attainable p goes from 0.031 to 1.9e-09, and a 70/30 effect — invisible at n=6,
+> where it would report p=0.69 — lands at p=0.043. **The table above has not been
+> re-measured on the larger set**, and is left exactly as it was recorded. It is a
+> record of a run, not a current claim about the retrieval arms.
 
 The sharpest evidence for that band is the project's own repeated runs. The identical
 hybrid configuration — same `k=8`, same `rrf_k=60`, same channels, same judge,
@@ -342,6 +355,53 @@ while succeeding without it; since Gemini bills reasoning tokens against
 faithfulness failure, the field is sent, and dropped-and-retried once per model if
 refused.
 
+### The question set, and why it is shaped this way
+
+`data/questions.jsonl` holds 30 questions over the 3-document corpus: **14
+cross-document, 11 single-document, 5 unanswerable** (10 hard, 14 medium, 6 easy).
+The composition is not arbitrary — each cohort is a metric's denominator:
+
+| cohort | n | what breaks without it |
+|---|---|---|
+| cross-document (`>=2` required docs) | 14 | XDR, Cov, Cite and Syn average over *only* these |
+| has a relevant set | 25 | CP's denominator; an unanswerable question is excluded, not scored 0 |
+| unanswerable | 5 | the only questions that exercise `answer_faithfulness`'s refusal path |
+| sole-document questions | >=1 per doc | a single-doc retrieval failure is otherwise visible only as a diluted XDR score |
+
+`tests/test_corpus_questions.py` asserts every one of those floors, so deleting
+questions back down to a decorative handful fails loudly rather than quietly
+emptying a column.
+
+Two properties are worth calling out, because they are what makes the set able to
+catch a wrong answer rather than just an incomplete one:
+
+- **Some questions are wrong-answerable from the largest document alone.** `xdr-005`
+  asks whether a 25-person German company needs a DPO. GDPR Article 37 alone says
+  *probably not* — none of its three triggers is clearly met. Section 38(1) BDSG
+  reverses that with a flat 20-person threshold. Retrieving only the Regulation
+  produces a confident, incorrect answer, which is a strictly harder failure to detect
+  than a missing one. `xdr-010` (employment-context processing) is unanswerable from
+  the Regulation for the same structural reason, and GDPR is 354 KB against the
+  national law's 150 KB, so dense retrieval has far more wrong surface to be drawn to.
+- **Three of the five refusals are traps, not absences.** `unanswerable-001` asks about
+  something simply not in the corpus. But `unanswerable-003` asks for the out-of-hours
+  escalation number, and section 4.2 of the policy *confirms that number exists* while
+  withholding it; `unanswerable-004` asks who the DPO is, and section 3.1 says the name
+  is published on the intranet without reproducing it; `unanswerable-005` is
+  unanswerable only because the policy never states where the company is established,
+  so the law mapping companies to authorities is present in full and still cannot be
+  applied. In all three the right chunk is retrieved, is highly relevant, and every
+  incentive points at inventing a plausible value. Refusing because the context is
+  empty is easy; refusing with the answer's own address in front of you is the
+  competence being measured.
+
+Each `must_contain` span is a verbatim quote, validated two ways: `validate_questions`
+checks it appears in the document, and a test checks it fits inside a **single chunk**.
+The second check matters because `metrics._chunk_is_relevant` asks about one chunk at a
+time — a span straddling a chunk boundary is present in the document and present in no
+chunk, so context precision would divide by zero relevant chunks and report a
+confidently wrong number without raising anything.
+
 ### The ablation is interleaved, and that is not a detail
 
 The ablation is the experiment that justifies the architecture:
@@ -368,9 +428,10 @@ state. Two further details matter and are tested:
 
 - **The arm order rotates per question.** Within a question the leading arm pays any
   cold-start cost and later arms inherit a warm cache, so a fixed order would simply
-  relabel that bias as an arm effect. With three arms over six questions each arm leads
-  exactly twice, and `QuestionRun.arm_index` records where each run actually landed so
-  the balance can be checked instead of trusted.
+  relabel that bias as an arm effect. The rotation divides evenly whenever the question
+  count is a multiple of the arm count — three arms over six questions gave each arm two
+  leads, over the current 30 it gives each arm ten — and `QuestionRun.arm_index` records
+  where each run actually landed so the balance can be checked instead of trusted.
 - **The paired latency column is `retrieval_s + generate_s`, not `latency_s`.**
   `latency_s` includes judging, and `CachingJudge` is keyed by `question_id`, which the
   arms share — so whichever arm ran second got identical verdicts for free and would
@@ -378,14 +439,17 @@ state. Two further details matter and are tested:
 
 The report then prints an **exact two-sided sign test** on the per-question differences
 (`metrics.paired_sign_test`). A sign test, not a paired t-test: these are bounded
-proportions over six questions, visibly non-normal and frequently tied at 1.0, and a
-t-test on six such values reports a precision it does not have. The price is power, and
+proportions, visibly non-normal and frequently tied at 1.0, and a t-test on a handful
+of such values reports a precision it does not have. The price is power, and
 the report states it rather than hiding it — it prints the **best p-value the design
 could possibly reach** next to the one it got, because at this n that floor is often
 above 0.05, and a test that *cannot* reach significance has to say so instead of
 returning a non-significant p that reads as "no difference". At n=6 the floor is 0.031
 and only unanimity reaches it; at n=5 it is 0.063, and the comparison is unwinnable
-before it starts.
+before it starts. This is what the corpus expansion bought: at the current 30 questions
+the floor is 1.9e-09, so the test's reach is no longer the limiting factor — and ties
+still cost power, because a tied pair is dropped from n rather than counted as evidence
+of no effect.
 
 `eval compare` refuses to compute any of this over runs that were not interleaved, and
 says why where it would otherwise print their latency columns. That guard is the whole
