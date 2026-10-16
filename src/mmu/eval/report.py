@@ -237,15 +237,30 @@ def _mrr(run: dict) -> float | None:
     return None if rank is None else rank.get("mrr")
 
 
-def _service_s(run: dict) -> float:
-    """Retrieval + generation, excluding judging — see ``QuestionRun.service_s``.
+#: The timing fields that make up service time, i.e. everything a served request would
+#: actually pay for. Kept as a list so that adding a stage to `QuestionRun` and
+#: forgetting to add it here is a *test* failure rather than a silently understated
+#: latency column — which is exactly what happened when `rerank_s` was introduced: the
+#: cross-encoder's ~19s per query was omitted from the paired table, and a reranked arm
+#: that was genuinely faster was reported as faster by 45s instead of its real 26s.
+_SERVICE_FIELDS: tuple[str, ...] = ("retrieval_s", "rerank_s", "generate_s")
 
-    Recomputed from the two component fields rather than read from ``latency_s``
-    because ``latency_s`` includes judge time, which arms of an interleaved run share
-    through the question-keyed judgment cache: whichever arm ran second got identical
-    verdicts for free and would look faster for no retrieval-related reason.
+
+def _service_s(run: dict) -> float:
+    """Every stage a served request pays for, excluding judging — mirrors
+    ``QuestionRun.service_s`` and must stay in step with it.
+
+    Recomputed from the component fields rather than read from ``latency_s`` because
+    ``latency_s`` includes judge time, which arms of an interleaved run share through
+    the judgment cache: where two arms produce an identical answer over identical
+    chunks, whichever ran second got its verdicts for free and would look faster for no
+    retrieval-related reason.
+
+    Summed over :data:`_SERVICE_FIELDS` rather than spelled out, so that a new stage is
+    added in one place. A missing field reads as 0.0, which is correct for an older
+    report written before the stage existed.
     """
-    return run.get("retrieval_s", 0.0) + run.get("generate_s", 0.0)
+    return sum(run.get(field, 0.0) for field in _SERVICE_FIELDS)
 
 
 def _signed(value: float, width: int) -> str:

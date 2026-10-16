@@ -364,3 +364,73 @@ def test_an_explicit_arm_list_overrides_the_rerank_flag() -> None:
         ["eval", "ablate", "--rerank", "--arm", "only=dense"]
     )
     assert args.arm == ["only=dense"]
+
+
+# ------------------------------------- the paired latency column must pay for rerank
+
+
+def test_report_service_time_matches_the_runner_field_by_field() -> None:
+    """The bug this guards, which shipped once and was caught only by reconciling the
+    report against its own JSON.
+
+    `QuestionRun.service_s` is a dataclass property; `report._service_s` re-derives the
+    same quantity from the serialized dict. When `rerank_s` was added to the first and
+    not the second, the paired table omitted ~19s per query of real cross-encoder cost
+    and reported a reranked arm as 45s faster when it was 26s faster. Both numbers
+    favoured the same arm, which is exactly why nothing looked wrong.
+
+    Asserting the *field list* rather than one example keeps a future stage from
+    repeating it: adding a timing field to the runner and not to `_SERVICE_FIELDS`
+    fails here.
+    """
+    from dataclasses import asdict
+
+    from mmu.eval.report import _SERVICE_FIELDS, _service_s
+    from mmu.eval.runner import QuestionRun
+
+    run = QuestionRun(
+        question_id="q", question="q?", answer_type="single_document", answer_text="a",
+        model="m", k=3, latency_s=99.0, retrieval_s=0.34, generate_s=26.87,
+        af=1.0, cp=None, xdr=None, cur=None, quality=1.0, marker_compliance=1.0,
+        n_claims=0, n_supported=0, rerank_s=20.58,
+    )
+    assert run.service_s == pytest.approx(47.79)
+    assert _service_s(asdict(run)) == pytest.approx(run.service_s)
+
+    # Every field the report sums must exist on the runner's record, or it is silently
+    # contributing 0.0 forever.
+    serialized = asdict(run)
+    for field in _SERVICE_FIELDS:
+        assert field in serialized, field
+
+    # And every nonzero timing stage the runner records must be in the report's sum.
+    stages = {"retrieval_s", "rerank_s", "generate_s"}
+    assert stages == set(_SERVICE_FIELDS), (
+        "a timing stage exists on QuestionRun that the paired latency column ignores"
+    )
+
+
+def test_a_reranked_arm_is_charged_for_the_cross_encoder_in_the_paired_table() -> None:
+    """End to end through `render_paired`: an arm that generates faster but pays a
+    large reranking cost must not appear faster by the generation saving alone."""
+    from mmu.eval.report import render_paired
+
+    def run(qid, *, retrieval, rerank, generate):
+        return {
+            "question_id": qid, "retrieval_s": retrieval, "rerank_s": rerank,
+            "generate_s": generate, "af": 1.0, "quality": 1.0, "rank": None,
+        }
+
+    base = {
+        "interleaved_with": ["base", "arm"], "arm_label": "base",
+        "runs": [run("q1", retrieval=0.3, rerank=0.0, generate=60.0)],
+    }
+    arm = {
+        "interleaved_with": ["base", "arm"], "arm_label": "arm",
+        "runs": [run("q1", retrieval=0.3, rerank=20.0, generate=20.0)],
+    }
+    out = render_paired([base, arm], ["base", "arm"])
+
+    # 60.3 -> 40.3 is a 20s saving, not the 40s the generation column alone would show.
+    assert "-20.00" in out
+    assert "-40.00" not in out

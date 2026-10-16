@@ -1,0 +1,1536 @@
+{
+  "runs": [
+    {
+      "question_id": "xdr-001",
+      "question": "A processor in Germany discovers a personal data breach affecting EU residents. How quickly must we notify, whom exactly, and what does our internal policy require beyond the statutory minimum?",
+      "answer_type": "cross_document",
+      "answer_text": "A processor in Germany must notify the controller without undue delay after becoming aware of a personal data breach [S2][S3][S4]. The notification must be made to the Federal Commissioner not later than 72 hours after becoming aware of the breach, unless the breach is unlikely to result in a risk to the legally protected interests of natural persons [S3]. \n\nInternally, the policy requires that any member of staff who detects a security incident must escalate it to the Office of the Data Protection Officer within four hours of detection [S1][S5]. The policy also mandates that the controller must notify the supervisory authority without undue delay and, where feasible, not later than 72 hours after becoming aware of the breach, unless the breach is unlikely to result in a risk to the rights and freedoms of natural persons [S2][S4][S7].\n\nBeyond the statutory minimum, the internal policy requires that the notification to the supervisory authority include:\n- A description of the nature of the personal data breach, including the categories and approximate number of data subjects and personal data records concerned [S2][S3][S4][S7].\n- The name and contact details of the data protection officer or other contact point where more information can be obtained [S2][S3][S4][S7].\n- A description of the likely consequences of the personal data breach [S2][S3][S4][S7].\n- The measures taken or proposed by the controller to address the personal data breach, including measures to mitigate its possible adverse effects [S3][S7].\n\nThe policy also requires that the controller document any personal data breaches, including all the facts relating to the breach, its effects, and the remedial action taken [S3][S7].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 60.89348709400019,
+      "retrieval_s": 0.3182291319999422,
+      "generate_s": 37.95048890700036,
+      "af": 1.0,
+      "cp": 0.8528571428571429,
+      "xdr": {
+        "coverage": 1.0,
+        "cite": 1.0,
+        "synthesis": 1.0,
+        "xdr": 1.0,
+        "n_required": 3
+      },
+      "cur": {
+        "cited": 0.75,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.75,
+        "k": 8
+      },
+      "quality": 0.9705714285714286,
+      "marker_compliance": 1.0,
+      "n_claims": 9,
+      "n_supported": 9,
+      "rerank_s": 22.610529122000116,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 1,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 5,
+        "n_relevant_total": 28,
+        "first_relevant_rank": 1,
+        "mrr": 1.0,
+        "recall": 0.17857142857142858,
+        "ndcg": 0.7036341014013555
+      }
+    },
+    {
+      "question_id": "xdr-002",
+      "question": "Who inside the company owns the external breach notification, and to which authority does it have to go?",
+      "answer_type": "cross_document",
+      "answer_text": "The Data Protection Officer owns every external notification arising from a personal data breach and determines the recipient of any external report, the contents of that report, and its timing [S1][S2]. The external report must be made to the supervisory authority without undue delay, and, where feasible, not later than 72 hours after having become aware of the breach, unless the controller can demonstrate that the personal data breach is unlikely to result in a risk to the rights and freedoms of natural persons [S3][S8].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 29.953713886000514,
+      "retrieval_s": 0.20970882999972673,
+      "generate_s": 10.769775613000093,
+      "af": 1.0,
+      "cp": 0.8303571428571428,
+      "xdr": {
+        "coverage": 0.5,
+        "cite": 0.5,
+        "synthesis": 1.0,
+        "xdr": 0.25,
+        "n_required": 2
+      },
+      "cur": {
+        "cited": 0.5,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.5,
+        "k": 8
+      },
+      "quality": 0.6660714285714286,
+      "marker_compliance": 1.0,
+      "n_claims": 2,
+      "n_supported": 2,
+      "rerank_s": 18.968453311000303,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "gdpr"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 0,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 4,
+        "n_relevant_total": 26,
+        "first_relevant_rank": 1,
+        "mrr": 1.0,
+        "recall": 0.15384615384615385,
+        "ndcg": 0.605782506766195
+      }
+    },
+    {
+      "question_id": "xdr-003",
+      "question": "Our processor tells us about a breach. What are our obligations as controller, and does our internal deadline differ from the statutory one?",
+      "answer_type": "cross_document",
+      "answer_text": "As a controller, you are required to notify the Federal Commissioner of a personal data breach without delay and, if possible, no later than 72 hours after becoming aware of it [S7]. Your processor, upon discovering a breach, must notify the controller without delay [S7][S8].\n\nRegarding internal deadlines, your internal policy imposes stricter requirements. Specifically, you must not treat compliance with this policy as establishing compliance with the law, and internal deadlines set out in the policy must be adhered to [S4][S6]. Therefore, if your internal policy sets a deadline that is stricter than the statutory 72-hour limit, you must follow the internal deadline [S4][S6].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 73.17213543199978,
+      "retrieval_s": 0.34703357000034885,
+      "generate_s": 53.598100813999736,
+      "af": 0.4,
+      "cp": 0.0,
+      "xdr": {
+        "coverage": 1.0,
+        "cite": 1.0,
+        "synthesis": 0.0,
+        "xdr": 0.0,
+        "n_required": 2
+      },
+      "cur": {
+        "cited": 0.5,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.5,
+        "k": 8
+      },
+      "quality": 0.16000000000000003,
+      "marker_compliance": 1.0,
+      "n_claims": 5,
+      "n_supported": 2,
+      "rerank_s": 19.219296672999917,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 2,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 0,
+        "n_relevant_total": 16,
+        "first_relevant_rank": null,
+        "mrr": 0.0,
+        "recall": 0.0,
+        "ndcg": 0.0
+      }
+    },
+    {
+      "question_id": "single-001",
+      "question": "What is the statutory deadline for notifying a personal data breach to the supervisory authority?",
+      "answer_type": "single_document",
+      "answer_text": "The controller shall notify the personal data breach to the supervisory authority without undue delay and, where feasible, not later than 72 hours after having become aware of it [S1][S3].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 81.03806093399999,
+      "retrieval_s": 0.32005737199961004,
+      "generate_s": 62.4167021129997,
+      "af": 1.0,
+      "cp": 1.0,
+      "xdr": null,
+      "cur": {
+        "cited": 0.25,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.25,
+        "k": 8
+      },
+      "quality": 1.0,
+      "marker_compliance": 1.0,
+      "n_claims": 1,
+      "n_supported": 1,
+      "rerank_s": 18.29744328600009,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "gdpr"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 1,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 2,
+        "n_relevant_total": 2,
+        "first_relevant_rank": 1,
+        "mrr": 1.0,
+        "recall": 1.0,
+        "ndcg": 1.0
+      }
+    },
+    {
+      "question_id": "single-002",
+      "question": "What distinguishes a data controller from a data processor?",
+      "answer_type": "single_document",
+      "answer_text": "A data controller determines the purposes and means of processing personal data, whereas a data processor processes personal data on behalf of the controller [S2][S4].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 80.52323566699943,
+      "retrieval_s": 0.32187891800003854,
+      "generate_s": 61.78092050699979,
+      "af": 1.0,
+      "cp": 0.8357142857142857,
+      "xdr": null,
+      "cur": {
+        "cited": 0.25,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.25,
+        "k": 8
+      },
+      "quality": 0.9452380952380951,
+      "marker_compliance": 1.0,
+      "n_claims": 1,
+      "n_supported": 1,
+      "rerank_s": 18.415378248000707,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "gdpr"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 0,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 6,
+        "n_relevant_total": 180,
+        "first_relevant_rank": 1,
+        "mrr": 1.0,
+        "recall": 0.03333333333333333,
+        "ndcg": 0.7834286399638037
+      }
+    },
+    {
+      "question_id": "unanswerable-001",
+      "question": "What is the deductible on our cyber-liability insurance policy for a notifiable personal data breach?",
+      "answer_type": "unanswerable",
+      "answer_text": "The provided context does not contain this information.",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 57.63157483199939,
+      "retrieval_s": 0.32816521499989904,
+      "generate_s": 38.25236041199969,
+      "af": 1.0,
+      "cp": null,
+      "xdr": null,
+      "cur": {
+        "cited": 0.0,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.0,
+        "k": 8
+      },
+      "quality": 1.0,
+      "marker_compliance": null,
+      "n_claims": 0,
+      "n_supported": 0,
+      "rerank_s": 19.04548778699973,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 2,
+      "rank": null
+    },
+    {
+      "question_id": "xdr-004",
+      "question": "One of our processors has just told us they think they've had an incident. What does the law require them to do, and what does our own policy require of them?",
+      "answer_type": "cross_document",
+      "answer_text": "According to the national law [S5][S6], a processor must notify the controller directly if they detect an incident. Specifically, the law states:\n\n- \"Where a processor acting on our behalf detects an incident, the processor must notify the Office of the Data Protection Officer directly. A processor must not notify any external body on our behalf, and must not wait for its own internal investigation to conclude before notifying us.\" [S4]\n\nThis requirement is stricter than the law, as stated in the company policy [S1][S3]:\n\n- \"Staff must not treat compliance with this policy as establishing compliance with the law, nor treat a legal minimum as permission to relax an internal deadline set out here.\" [S1]\n\nTherefore, the processor must notify the Office of the Data Protection Officer directly, and they must do so within four hours of detection, as per the company policy [S4].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 96.63396274599927,
+      "retrieval_s": 0.10033777999979065,
+      "generate_s": 76.8350377630004,
+      "af": 0.3333333333333333,
+      "cp": 0.3333333333333333,
+      "xdr": {
+        "coverage": 1.0,
+        "cite": 0.5,
+        "synthesis": 0.5,
+        "xdr": 0.25,
+        "n_required": 2
+      },
+      "cur": {
+        "cited": 0.625,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.625,
+        "k": 8
+      },
+      "quality": 0.3,
+      "marker_compliance": 1.0,
+      "n_claims": 3,
+      "n_supported": 1,
+      "rerank_s": 19.68755435299954,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "national-law"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 1,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 1,
+        "n_relevant_total": 2,
+        "first_relevant_rank": 3,
+        "mrr": 0.3333333333333333,
+        "recall": 0.5,
+        "ndcg": 0.3065735963827292
+      }
+    },
+    {
+      "question_id": "xdr-005",
+      "question": "We employ about 25 people in Germany and most of them work with customer data in our analytics platform. Are we legally required to appoint a data protection officer?",
+      "answer_type": "cross_document",
+      "answer_text": "Based on the information provided, you are required to appoint a data protection officer because you \"constantly employ as a rule at least 20 persons dealing with the automated processing of personal data\" [S6]. Additionally, since your activities involve processing personal data for the purpose of market or opinion research, you are also required to designate a data protection officer regardless of the number of employees [S1]. Therefore, you are legally required to appoint a data protection officer [S1][S6].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 98.3755724699995,
+      "retrieval_s": 0.32416651699986687,
+      "generate_s": 78.39590366600078,
+      "af": 0.3333333333333333,
+      "cp": 0.4666666666666666,
+      "xdr": {
+        "coverage": 1.0,
+        "cite": 0.3333333333333333,
+        "synthesis": 0.5,
+        "xdr": 0.16666666666666666,
+        "n_required": 3
+      },
+      "cur": {
+        "cited": 0.25,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.25,
+        "k": 8
+      },
+      "quality": 0.29333333333333333,
+      "marker_compliance": 1.0,
+      "n_claims": 3,
+      "n_supported": 1,
+      "rerank_s": 19.64706912300062,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "national-law"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 0,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 3,
+        "n_relevant_total": 3,
+        "first_relevant_rank": 2,
+        "mrr": 0.5,
+        "recall": 1.0,
+        "ndcg": 0.6447841584694202
+      }
+    },
+    {
+      "question_id": "xdr-006",
+      "question": "An engineer noticed something suspicious at 9pm on a Saturday but wasn't sure it was real until Monday. When did our internal clock start, and when did the statutory one?",
+      "answer_type": "cross_document",
+      "answer_text": "The internal clock for the four-hour requirement started at 9pm on Saturday when the engineer first noticed something suspicious [S1][S4]. The statutory clock, based on the provided national law, would start when the individual became aware of the personal data breach, which in this case would also be at 9pm on Saturday [S8]. The engineer had until 9pm on Monday (three days later) to notify the Data Protection Officer internally, and until 9pm on Monday (three days later) to notify the Federal Commissioner if the breach was likely to result in a risk to the legally protected interests of natural persons [S8].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 72.05433190799977,
+      "retrieval_s": 0.3457738850001988,
+      "generate_s": 51.49109499399947,
+      "af": 0.0,
+      "cp": 1.0,
+      "xdr": {
+        "coverage": 1.0,
+        "cite": 0.5,
+        "synthesis": 0.0,
+        "xdr": 0.0,
+        "n_required": 2
+      },
+      "cur": {
+        "cited": 0.375,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.375,
+        "k": 8
+      },
+      "quality": 0.2,
+      "marker_compliance": 1.0,
+      "n_claims": 3,
+      "n_supported": 0,
+      "rerank_s": 20.209745495999414,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "national-law"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 2,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 1,
+        "n_relevant_total": 3,
+        "first_relevant_rank": 1,
+        "mrr": 1.0,
+        "recall": 0.3333333333333333,
+        "ndcg": 0.46927872602275644
+      }
+    },
+    {
+      "question_id": "xdr-007",
+      "question": "The laptop that was stolen was fully encrypted. Do we still have to tell the affected customers, and can we stand down the internal escalation?",
+      "answer_type": "cross_document",
+      "answer_text": "The provided context does not contain this information.",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 59.80345490200034,
+      "retrieval_s": 0.3371478990002288,
+      "generate_s": 39.94594621499982,
+      "af": 0.0,
+      "cp": 0.30952380952380953,
+      "xdr": {
+        "coverage": 1.0,
+        "cite": 0.0,
+        "synthesis": 0.0,
+        "xdr": 0.0,
+        "n_required": 2
+      },
+      "cur": {
+        "cited": 0.0,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.0,
+        "k": 8
+      },
+      "quality": 0.06190476190476191,
+      "marker_compliance": null,
+      "n_claims": 0,
+      "n_supported": 0,
+      "rerank_s": 19.514507685999888,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr"
+      ],
+      "cited_doc_ids": [],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 1,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 2,
+        "n_relevant_total": 2,
+        "first_relevant_rank": 3,
+        "mrr": 0.3333333333333333,
+        "recall": 1.0,
+        "ndcg": 0.5109559939712153
+      }
+    },
+    {
+      "question_id": "xdr-008",
+      "question": "Which authority supervises a private company like ours in Germany, and who on our staff is allowed to contact them?",
+      "answer_type": "cross_document",
+      "answer_text": "The supervisory authority for a private company like yours in Germany is determined based on the location of your establishment. If you have more than one establishment in Germany, Article 4 no. 16 of Regulation (EU) 2016/679 applies to determine which supervisory authority is competent [S1][S6].\n\nRegarding who on your staff is allowed to contact the supervisory authority, the company policy states that the Data Protection Officer is the sole owner of any external notification arising from a personal data breach. No other function, including Legal, Security Operations, Communications, Sales, or any member of the Management Board, may make an external report or authorize one [S4]. Therefore, only the Data Protection Officer is allowed to contact the supervisory authority on your behalf [S4].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 92.1427931219996,
+      "retrieval_s": 0.10258066799997323,
+      "generate_s": 73.16076013400016,
+      "af": 0.6666666666666666,
+      "cp": 0.75,
+      "xdr": {
+        "coverage": 1.0,
+        "cite": 1.0,
+        "synthesis": 0.5,
+        "xdr": 0.5,
+        "n_required": 2
+      },
+      "cur": {
+        "cited": 0.375,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.375,
+        "k": 8
+      },
+      "quality": 0.6166666666666667,
+      "marker_compliance": 1.0,
+      "n_claims": 6,
+      "n_supported": 4,
+      "rerank_s": 18.86749963300008,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 0,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 2,
+        "n_relevant_total": 2,
+        "first_relevant_rank": 1,
+        "mrr": 1.0,
+        "recall": 1.0,
+        "ndcg": 0.8772153153380493
+      }
+    },
+    {
+      "question_id": "xdr-009",
+      "question": "If we miss the statutory breach notification deadline, what is the maximum fine, and what happens to the employee who sat on the escalation?",
+      "answer_type": "cross_document",
+      "answer_text": "If we miss the statutory breach notification deadline, the maximum fine is up to fifty thousand euros [S7]. If an employee fails to escalate an incident within the four-hour requirement, it is considered a disciplinary matter, irrespective of whether the incident ultimately requires external reporting [S4][S1].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 72.88271070000064,
+      "retrieval_s": 0.33082956099951843,
+      "generate_s": 52.48773406100008,
+      "af": 0.5,
+      "cp": 1.0,
+      "xdr": {
+        "coverage": 0.5,
+        "cite": 0.5,
+        "synthesis": 0.5,
+        "xdr": 0.125,
+        "n_required": 2
+      },
+      "cur": {
+        "cited": 0.375,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.375,
+        "k": 8
+      },
+      "quality": 0.45,
+      "marker_compliance": 1.0,
+      "n_claims": 2,
+      "n_supported": 1,
+      "rerank_s": 20.058426599000086,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "national-law"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 2,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 1,
+        "n_relevant_total": 2,
+        "first_relevant_rank": 1,
+        "mrr": 1.0,
+        "recall": 0.5,
+        "ndcg": 0.6131471927654584
+      }
+    },
+    {
+      "question_id": "xdr-010",
+      "question": "We suspect an employee has been exfiltrating customer records. Can we lawfully examine their activity to investigate, and what is the internal escalation obligation?",
+      "answer_type": "cross_document",
+      "answer_text": "The provided context does not contain this information.",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 61.27099800900032,
+      "retrieval_s": 0.3450598790004733,
+      "generate_s": 41.566623592000724,
+      "af": 0.0,
+      "cp": 0.6428571428571428,
+      "xdr": {
+        "coverage": 1.0,
+        "cite": 0.0,
+        "synthesis": 0.0,
+        "xdr": 0.0,
+        "n_required": 2
+      },
+      "cur": {
+        "cited": 0.0,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.0,
+        "k": 8
+      },
+      "quality": 0.12857142857142856,
+      "marker_compliance": null,
+      "n_claims": 0,
+      "n_supported": 0,
+      "rerank_s": 19.353842393999912,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 1,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 2,
+        "n_relevant_total": 2,
+        "first_relevant_rank": 1,
+        "mrr": 1.0,
+        "recall": 1.0,
+        "ndcg": 0.8175295903539445
+      }
+    },
+    {
+      "question_id": "xdr-011",
+      "question": "What do we have to write down about a breach, and how long do we keep our own incident records?",
+      "answer_type": "cross_document",
+      "answer_text": "According to the company policy, you need to record the nature of the breach, the likely consequences, the measures taken or proposed, and the contact point for further information. Additionally, the incident register must be retained for five years and is made available to the Management Board quarterly and to an external authority on request [S1][S3].\n\nThe incident register records every security incident escalated under section 4, including those assessed as not constituting a personal data breach and those assessed as not externally reportable [S1][S3].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 84.48068797900032,
+      "retrieval_s": 0.10299023900006432,
+      "generate_s": 65.2526504110001,
+      "af": 1.0,
+      "cp": 1.0,
+      "xdr": {
+        "coverage": 1.0,
+        "cite": 0.5,
+        "synthesis": 0.5,
+        "xdr": 0.25,
+        "n_required": 2
+      },
+      "cur": {
+        "cited": 0.25,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.25,
+        "k": 8
+      },
+      "quality": 0.7000000000000001,
+      "marker_compliance": 1.0,
+      "n_claims": 3,
+      "n_supported": 3,
+      "rerank_s": 19.11835327799963,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 0,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 1,
+        "n_relevant_total": 2,
+        "first_relevant_rank": 1,
+        "mrr": 1.0,
+        "recall": 0.5,
+        "ndcg": 0.6131471927654584
+      }
+    },
+    {
+      "question_id": "xdr-012",
+      "question": "I'm drafting the notice to affected customers. What must it contain by law, and what does our policy forbid me from putting in it?",
+      "answer_type": "cross_document",
+      "answer_text": "By law, the notice to affected customers must contain at least the information listed in Section 55, which includes the purposes of the processing, the rights of data subjects, the names and contact details of the controller and the Data Protection Officer, the right to lodge a complaint with the Federal Commissioner, and the contact details of the Federal Commissioner [S3]. Additionally, if the processing involves special categories of personal data, suitable measures to safeguard the data subjects' interests must be in place [S3][S8].\n\nYour policy forbids you from minimizing the situation, speculating about the cause, or assigning blame to a named individual [S1][S6].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 67.76771729699976,
+      "retrieval_s": 0.3397293489997537,
+      "generate_s": 47.93721052899855,
+      "af": 0.6666666666666666,
+      "cp": 0.6666666666666666,
+      "xdr": {
+        "coverage": 0.5,
+        "cite": 0.5,
+        "synthesis": 0.0,
+        "xdr": 0.0,
+        "n_required": 2
+      },
+      "cur": {
+        "cited": 0.5,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.5,
+        "k": 8
+      },
+      "quality": 0.4,
+      "marker_compliance": 1.0,
+      "n_claims": 3,
+      "n_supported": 2,
+      "rerank_s": 19.4845949369992,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "national-law"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 2,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 2,
+        "n_relevant_total": 3,
+        "first_relevant_rank": 1,
+        "mrr": 1.0,
+        "recall": 0.6666666666666666,
+        "ndcg": 0.6364391809889587
+      }
+    },
+    {
+      "question_id": "xdr-013",
+      "question": "Can a regulator force us to replace our data protection officer, and who appoints ours in the first place?",
+      "answer_type": "cross_document",
+      "answer_text": "According to the provided context, a regulator can demand the dismissal of a data protection officer if the officer does not have the necessary expert knowledge or if there is a serious conflict of interest. However, the appointment of the data protection officer is typically done by the controller or processor itself, not by a regulator.\n\nSpecifically, [S7] states that \"The supervisory authorities shall advise and support the data protection officers to meet their typical needs. They may demand the dismissal of a data protection officer if he or she does not have the expert knowledge needed to perform his or her tasks or if there is a serious conflict of interests as referred to in Article 38 (6) of Regulation (EU) 2016/679.\" \n\nAnd [S3] indicates that \"The public body shall ensure that the data protection officer is involved, properly and in a timely manner, in all issues which relate to the protection of personal data,\" but does not specify who appoints the data protection officer. \n\nTherefore, the data protection officer is generally appointed by the controller or processor, and a regulator can demand dismissal under certain conditions.",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 107.14071297400005,
+      "retrieval_s": 0.33012395200057654,
+      "generate_s": 88.20971253199968,
+      "af": 0.6,
+      "cp": 0.39285714285714285,
+      "xdr": {
+        "coverage": 1.0,
+        "cite": 0.5,
+        "synthesis": 0.5,
+        "xdr": 0.25,
+        "n_required": 2
+      },
+      "cur": {
+        "cited": 0.25,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.25,
+        "k": 8
+      },
+      "quality": 0.4185714285714286,
+      "marker_compliance": 1.0,
+      "n_claims": 5,
+      "n_supported": 3,
+      "rerank_s": 18.590568605000954,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "national-law"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 1,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 2,
+        "n_relevant_total": 3,
+        "first_relevant_rank": 2,
+        "mrr": 0.5,
+        "recall": 0.6666666666666666,
+        "ndcg": 0.4525081529734507
+      }
+    },
+    {
+      "question_id": "xdr-014",
+      "question": "What security measures does the law actually require us to have, and who internally owns containment when something goes wrong?",
+      "answer_type": "cross_document",
+      "answer_text": "The law requires controllers and processors to implement technical and organizational measures to ensure a level of security appropriate to the risk when processing personal data [S7][S8]. These measures may include pseudonymization and encryption of personal data if such means are possible in view of the purposes of processing [S8].\n\nRegarding internal roles, Security Operations owns technical containment and forensic preservation [S2][S4].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 85.25627589100077,
+      "retrieval_s": 0.560188940999069,
+      "generate_s": 64.52619091999986,
+      "af": 0.6666666666666666,
+      "cp": 1.0,
+      "xdr": {
+        "coverage": 1.0,
+        "cite": 0.5,
+        "synthesis": 0.5,
+        "xdr": 0.25,
+        "n_required": 2
+      },
+      "cur": {
+        "cited": 0.5,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.5,
+        "k": 8
+      },
+      "quality": 0.5666666666666667,
+      "marker_compliance": 1.0,
+      "n_claims": 3,
+      "n_supported": 2,
+      "rerank_s": 20.155566048000765,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "national-law"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 0,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 1,
+        "n_relevant_total": 10,
+        "first_relevant_rank": 1,
+        "mrr": 1.0,
+        "recall": 0.1,
+        "ndcg": 0.2529427027676571
+      }
+    },
+    {
+      "question_id": "single-003",
+      "question": "How does the Regulation define personal data?",
+      "answer_type": "single_document",
+      "answer_text": "For the purposes of this Regulation, 'personal data' means any information relating to an identified or identifiable natural person (\u2018data subject\u2019); an identifiable natural person is one who can be identified, directly or indirectly, in particular by reference to an identifier such as a name, an identification number, location data, an online identifier or to one or more factors specific to the physical, physiological, genetic, mental, economic, cultural or social identity of that natural person [S1][S4].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 65.98086547599996,
+      "retrieval_s": 0.3145030230007251,
+      "generate_s": 47.888746876998994,
+      "af": 1.0,
+      "cp": 1.0,
+      "xdr": null,
+      "cur": {
+        "cited": 0.25,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.25,
+        "k": 8
+      },
+      "quality": 1.0,
+      "marker_compliance": 1.0,
+      "n_claims": 1,
+      "n_supported": 1,
+      "rerank_s": 17.76902789900123,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "gdpr"
+      ],
+      "cited_doc_ids": [
+        "gdpr"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 2,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 1,
+        "n_relevant_total": 1,
+        "first_relevant_rank": 1,
+        "mrr": 1.0,
+        "recall": 1.0,
+        "ndcg": 1.0
+      }
+    },
+    {
+      "question_id": "single-004",
+      "question": "What does pseudonymisation mean, and when does pseudonymised data stop being personal data?",
+      "answer_type": "single_document",
+      "answer_text": "Pseudonymisation means the processing of personal data in such a manner that the data can no longer be attributed to a specific data subject without the use of additional information, provided that such additional information is kept separately and is subject to technical and organisational measures to ensure that the personal data cannot be attributed to an identified or identifiable natural person [S3][S4].\n\nPseudonymised data can still be considered personal data if it could be attributed to a specific data subject with the use of additional information. However, when personal data have undergone pseudonymisation, which could be attributed to a natural person by the use of additional information, such data should be considered to be information on an identifiable natural person [S4].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 92.06417213200075,
+      "retrieval_s": 0.7362901039996359,
+      "generate_s": 70.63328259500122,
+      "af": 0.6666666666666666,
+      "cp": 1.0,
+      "xdr": null,
+      "cur": {
+        "cited": 0.25,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.25,
+        "k": 8
+      },
+      "quality": 0.7777777777777777,
+      "marker_compliance": 1.0,
+      "n_claims": 3,
+      "n_supported": 2,
+      "rerank_s": 20.672835457000474,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "gdpr",
+        "national-law"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 1,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 1,
+        "n_relevant_total": 1,
+        "first_relevant_rank": 1,
+        "mrr": 1.0,
+        "recall": 1.0,
+        "ndcg": 1.0
+      }
+    },
+    {
+      "question_id": "single-005",
+      "question": "How long do we have to respond to a data subject access request, and can that be extended?",
+      "answer_type": "single_document",
+      "answer_text": "The controller shall provide information on action taken on a request under Articles 15 to 22 to the data subject without undue delay and in any event within one month of receipt of the request. That period may be extended by two further months where necessary, taking into account the complexity and number of the requests [S1].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 86.24002260899942,
+      "retrieval_s": 1.6702944400003616,
+      "generate_s": 64.63690043300085,
+      "af": 1.0,
+      "cp": 0.75,
+      "xdr": null,
+      "cur": {
+        "cited": 0.125,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.125,
+        "k": 8
+      },
+      "quality": 0.9166666666666666,
+      "marker_compliance": 1.0,
+      "n_claims": 2,
+      "n_supported": 2,
+      "rerank_s": 19.911866051999823,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "gdpr"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 0,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 2,
+        "n_relevant_total": 3,
+        "first_relevant_rank": 1,
+        "mrr": 1.0,
+        "recall": 0.6666666666666666,
+        "ndcg": 0.6713860725233041
+      }
+    },
+    {
+      "question_id": "single-006",
+      "question": "When are we required to carry out a data protection impact assessment?",
+      "answer_type": "single_document",
+      "answer_text": "A data protection impact assessment is required where a type of processing, particularly using new technologies, and taking into account the nature, scope, context, and purposes of the processing, is likely to result in a high risk to the rights and freedoms of natural persons [S2][S4][S6]. This includes systematic and extensive evaluations of personal aspects based on automated processing, processing on a large scale of special categories of data, or systematic monitoring of publicly accessible areas on a large scale [S2][S4]. Additionally, a data protection impact assessment should be carried out if the processing involves a high risk that cannot be mitigated by appropriate measures in terms of available technology and costs of implementation [S4][S6].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 101.31427525799882,
+      "retrieval_s": 0.4858714419988246,
+      "generate_s": 79.51005396100118,
+      "af": 1.0,
+      "cp": 0.6388888888888888,
+      "xdr": null,
+      "cur": {
+        "cited": 0.375,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.375,
+        "k": 8
+      },
+      "quality": 0.8796296296296295,
+      "marker_compliance": 1.0,
+      "n_claims": 3,
+      "n_supported": 3,
+      "rerank_s": 21.296265945000414,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "gdpr"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 2,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 3,
+        "n_relevant_total": 6,
+        "first_relevant_rank": 2,
+        "mrr": 0.5,
+        "recall": 0.5,
+        "ndcg": 0.4725458388387121
+      }
+    },
+    {
+      "question_id": "single-007",
+      "question": "What is the maximum administrative fine for breaching the basic principles for processing or the conditions for consent?",
+      "answer_type": "single_document",
+      "answer_text": "The maximum administrative fine for breaching the basic principles for processing or the conditions for consent is up to 20,000,000 EUR, or in the case of an undertaking, up to 4% of the total worldwide annual turnover of the preceding financial year, whichever is higher [S1][S4].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 86.25864533800086,
+      "retrieval_s": 0.32325278600001184,
+      "generate_s": 64.94604030700066,
+      "af": 1.0,
+      "cp": 1.0,
+      "xdr": null,
+      "cur": {
+        "cited": 0.25,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.25,
+        "k": 8
+      },
+      "quality": 1.0,
+      "marker_compliance": 1.0,
+      "n_claims": 1,
+      "n_supported": 1,
+      "rerank_s": 20.976564905000487,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "gdpr"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 1,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 1,
+        "n_relevant_total": 1,
+        "first_relevant_rank": 1,
+        "mrr": 1.0,
+        "recall": 1.0,
+        "ndcg": 1.0
+      }
+    },
+    {
+      "question_id": "single-008",
+      "question": "Under German law, at what headcount does a company have to appoint a data protection officer?",
+      "answer_type": "single_document",
+      "answer_text": "According to German law, a company must appoint a data protection officer if they \"constantly employ as a rule at least 20 persons dealing with the automated processing of personal data.\" [S5]",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 92.48307058099999,
+      "retrieval_s": 0.12350840999897628,
+      "generate_s": 73.00242380399868,
+      "af": 1.0,
+      "cp": 0.2,
+      "xdr": null,
+      "cur": {
+        "cited": 0.125,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.125,
+        "k": 8
+      },
+      "quality": 0.7333333333333333,
+      "marker_compliance": 1.0,
+      "n_claims": 1,
+      "n_supported": 1,
+      "rerank_s": 19.349858307999966,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "national-law"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 0,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 1,
+        "n_relevant_total": 1,
+        "first_relevant_rank": 5,
+        "mrr": 0.2,
+        "recall": 1.0,
+        "ndcg": 0.38685280723454163
+      }
+    },
+    {
+      "question_id": "single-009",
+      "question": "Does the internal four-hour clock start when I notice something odd, or when it's confirmed as a real incident?",
+      "answer_type": "single_document",
+      "answer_text": "The four-hour clock starts when you notice something odd, not when it is confirmed as a real incident [S1][S2][S3][S4].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 57.31442711499949,
+      "retrieval_s": 0.3270868989984592,
+      "generate_s": 37.24643408999873,
+      "af": 0.0,
+      "cp": 0.3333333333333333,
+      "xdr": null,
+      "cur": {
+        "cited": 0.5,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.5,
+        "k": 8
+      },
+      "quality": 0.11111111111111109,
+      "marker_compliance": 1.0,
+      "n_claims": 1,
+      "n_supported": 0,
+      "rerank_s": 19.732293678000133,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 2,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 1,
+        "n_relevant_total": 1,
+        "first_relevant_rank": 3,
+        "mrr": 0.3333333333333333,
+        "recall": 1.0,
+        "ndcg": 0.5
+      }
+    },
+    {
+      "question_id": "single-010",
+      "question": "My team lead told me to hold off escalating until Legal has reviewed it. Is that allowed?",
+      "answer_type": "single_document",
+      "answer_text": "No, that is not allowed. According to the company policy, any instruction to delay an escalation must itself be escalated to the Data Protection Officer within four hours [S7][S4]. The policy strictly enforces the four-hour internal deadline for escalating security incidents, and no manager, director, or board member may waive, extend, or delay an escalation for any reason, including pending legal review [S4].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 78.1956244869998,
+      "retrieval_s": 0.3175278889993933,
+      "generate_s": 59.45868787699874,
+      "af": 0.3333333333333333,
+      "cp": 1.0,
+      "xdr": null,
+      "cur": {
+        "cited": 0.25,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.25,
+        "k": 8
+      },
+      "quality": 0.5555555555555556,
+      "marker_compliance": 1.0,
+      "n_claims": 3,
+      "n_supported": 1,
+      "rerank_s": 18.408666070001345,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr"
+      ],
+      "cited_doc_ids": [
+        "company-policy"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 1,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 1,
+        "n_relevant_total": 1,
+        "first_relevant_rank": 1,
+        "mrr": 1.0,
+        "recall": 1.0,
+        "ndcg": 1.0
+      }
+    },
+    {
+      "question_id": "single-011",
+      "question": "Are there circumstances where we don't have to tell affected individuals about a breach at all?",
+      "answer_type": "single_document",
+      "answer_text": "Yes, there are circumstances where notification to affected individuals is not required. According to [S4], notification is not needed if the controller has implemented appropriate technical and organizational protection measures that render the personal data unintelligible to unauthorized persons, or if subsequent measures have ensured that the substantial risk is no longer likely to exist. Additionally, if notifying the data subjects would involve a disproportionate effort, the controller may instead make a public communication or take a similar measure to inform them in an equally effective manner [S4].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 80.82073442300134,
+      "retrieval_s": 0.3245429590006097,
+      "generate_s": 61.75289728499956,
+      "af": 0.6666666666666666,
+      "cp": 0.0,
+      "xdr": null,
+      "cur": {
+        "cited": 0.125,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.125,
+        "k": 8
+      },
+      "quality": 0.44444444444444436,
+      "marker_compliance": 1.0,
+      "n_claims": 3,
+      "n_supported": 2,
+      "rerank_s": 18.732209773999784,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "national-law"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 0,
+      "rank": {
+        "k": 8,
+        "n_relevant_retrieved": 0,
+        "n_relevant_total": 1,
+        "first_relevant_rank": null,
+        "mrr": 0.0,
+        "recall": 0.0,
+        "ndcg": 0.0
+      }
+    },
+    {
+      "question_id": "unanswerable-002",
+      "question": "How many people does Northwind Analytics employ, and what was its annual turnover last year?",
+      "answer_type": "unanswerable",
+      "answer_text": "The provided context does not contain this information. [S1][S3][S4][S5][S6][S7][S8]",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 74.14004099699923,
+      "retrieval_s": 0.32277838999834785,
+      "generate_s": 53.85247116000028,
+      "af": 0.0,
+      "cp": null,
+      "xdr": null,
+      "cur": {
+        "cited": 0.875,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.875,
+        "k": 8
+      },
+      "quality": 0.0,
+      "marker_compliance": 1.0,
+      "n_claims": 2,
+      "n_supported": 0,
+      "rerank_s": 19.95736013200076,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 2,
+      "rank": null
+    },
+    {
+      "question_id": "unanswerable-003",
+      "question": "What is the out-of-hours escalation number I should call if I detect an incident at the weekend?",
+      "answer_type": "unanswerable",
+      "answer_text": "The provided context does not contain this information. [S1][S2][S3][S4][S5][S6][S7][S8]",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 63.88664218099984,
+      "retrieval_s": 0.329964648000896,
+      "generate_s": 44.71253689900004,
+      "af": 0.0,
+      "cp": null,
+      "xdr": null,
+      "cur": {
+        "cited": 1.0,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 1.0,
+        "k": 8
+      },
+      "quality": 0.0,
+      "marker_compliance": 1.0,
+      "n_claims": 2,
+      "n_supported": 0,
+      "rerank_s": 18.838113246998546,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "national-law"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 1,
+      "rank": null
+    },
+    {
+      "question_id": "unanswerable-004",
+      "question": "Who is the current Data Protection Officer at Northwind Analytics, and who is their standing deputy?",
+      "answer_type": "unanswerable",
+      "answer_text": "The current Data Protection Officer at Northwind Analytics GmbH is appointed by the company, but the specific name is not provided in the given context [S1][S3][S4]. The standing deputy's name is also not explicitly stated in the provided information [S1][S3][S4]. These details are reviewed annually by the Management Board and are published on the intranet [S3].",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 88.81919926199953,
+      "retrieval_s": 0.3296203919999243,
+      "generate_s": 69.41338671500125,
+      "af": 0.3333333333333333,
+      "cp": null,
+      "xdr": null,
+      "cur": {
+        "cited": 0.375,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 0.375,
+        "k": 8
+      },
+      "quality": 0.3333333333333333,
+      "marker_compliance": 1.0,
+      "n_claims": 3,
+      "n_supported": 1,
+      "rerank_s": 19.067420657000184,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "gdpr"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 0,
+      "rank": null
+    },
+    {
+      "question_id": "unanswerable-005",
+      "question": "Which Land's supervisory authority is the competent one for Northwind Analytics?",
+      "answer_type": "unanswerable",
+      "answer_text": "The provided context does not contain this information. [S1][S2][S3][S4][S5][S6][S7][S8]",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "k": 8,
+      "latency_s": 62.97762986699854,
+      "retrieval_s": 0.3132334259989875,
+      "generate_s": 44.16875367300054,
+      "af": 0.0,
+      "cp": null,
+      "xdr": null,
+      "cur": {
+        "cited": 1.0,
+        "attr": 0.0,
+        "tok": 0.0,
+        "gap": 1.0,
+        "k": 8
+      },
+      "quality": 0.0,
+      "marker_compliance": 1.0,
+      "n_claims": 2,
+      "n_supported": 0,
+      "rerank_s": 18.48494803700123,
+      "degraded_claims": 0,
+      "invented_spans": 0,
+      "error": null,
+      "retrieved_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "cited_doc_ids": [
+        "company-policy",
+        "gdpr",
+        "national-law"
+      ],
+      "arm_label": "hybrid-rerank-k8",
+      "arm_index": 2,
+      "rank": null
+    }
+  ],
+  "judge": "local",
+  "model": "qwen2.5:7b-instruct-q4_K_M",
+  "embed_model": "BAAI/bge-m3",
+  "channels": [
+    "dense",
+    "sparse"
+  ],
+  "k": 8,
+  "rrf_k": 60,
+  "weights": [
+    0.4,
+    0.2,
+    0.4
+  ],
+  "epsilon": 0.01,
+  "n_documents": 3,
+  "n_chunks": 378,
+  "arm_label": "hybrid-rerank-k8",
+  "interleaved_with": [
+    "hybrid-k8",
+    "hybrid-rerank-k3",
+    "hybrid-rerank-k8"
+  ],
+  "rerank": "default",
+  "rerank_depth": 32,
+  "af": 0.5722222222222223,
+  "cp": 0.6801222222222222,
+  "cp_n": 25,
+  "xdr_mean": 0.21726190476190474,
+  "xdr_n": 14,
+  "cov_mean": 0.8928571428571429,
+  "cite_mean": 0.5238095238095238,
+  "syn_mean": 0.39285714285714285,
+  "cur_cited": 0.375,
+  "cur_attr": 0.0,
+  "cur_tok": 0.0,
+  "cur_gap": 0.375,
+  "corpus_lpqu": 147.8949806903772,
+  "p50_latency_s": 79.35943007699962,
+  "p95_latency_s": 99.99185900339911,
+  "mrr": 0.748,
+  "mrr_n": 25,
+  "mean_recall": 0.63196336996337,
+  "mean_ndcg": 0.6127260707810804,
+  "rank_n": 25,
+  "marker_compliance": 1.0,
+  "marker_compliance_n": 27,
+  "degraded_claims": 0,
+  "invented_spans": 0
+}

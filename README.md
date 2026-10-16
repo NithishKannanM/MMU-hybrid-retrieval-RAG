@@ -193,7 +193,70 @@ floor**, because it dropped markers entirely on one question. Its higher AF is b
 inside the noise band and resting on citations the report declines to trust. (That run
 predates the two scoring fixes below and has not been repeated.)
 
-### Four scoring bugs this run surfaced
+### The reranking result (measured, 30 questions, 90 generations)
+
+`mmu eval ablate --rerank`, interleaved question-major, `reports/rerank/`. All three
+arms share `depth=32`; `marker_compliance` is 1.000 on all three, so no column is
+flagged unreliable.
+
+```
+arm                   AF     CP    Cov   Cite    Syn    XDR    MRR   NDCG    R@k   service
+hybrid-k8          0.443  0.572  0.929  0.762  0.536  0.452  0.641  0.479  0.469     58.0s
+hybrid-rerank-k8   0.572  0.680  0.893  0.524  0.393  0.217  0.748  0.613  0.632     77.0s
+hybrid-rerank-k3   0.580  0.743  0.583  0.452  0.214  0.106  0.740  0.554  0.450     32.0s
+```
+
+**One result reaches significance, and it is latency.** `hybrid-rerank-k3` is
+**26.0s faster per question, on 28 of 30 questions, p=0.000** at a floor of 0.000 — a
+genuine win, and it survives *paying* 19.3s per query to the cross-encoder, because
+dropping the prompt from 8 chunks to 3 cut mean generation from 57.6s to 12.3s.
+
+**The second reranked arm is significantly *worse*.** `hybrid-rerank-k8` is **19.0s
+slower, on 29 of 30 questions, p=0.000**: it pays the cross-encoder and keeps the same
+prompt length, so there is no generation saving to offset it. Having both arms is what
+makes that readable — a single "rerank and shrink" arm would have reported the net and
+hidden that the entire latency win comes from the shrink, not the reranking.
+
+**Retrieval quality improved, and reproduced exactly.** recall@8 `0.469 → 0.632`,
+MRR `0.641 → 0.748` — matching the retrieval-only prediction from
+`scripts/rerank_headroom.py` to three decimals, which is a useful consistency check on
+the whole pipeline. Four of the five questions that previously retrieved **nothing**
+relevant now score AF 1.00, `single-008` among them: its only relevant chunk sat at
+fused rank 19, the control answered it at AF 0.00, and both reranked arms answer it
+correctly.
+
+**AF moved in the right direction and did not reach significance:** `0.443 → 0.580`,
+14 questions up, 6 down, 10 tied, **p=0.115**. Worth reporting as a direction, not a
+result. The composite quality score is flatter still (11 up, 13 down, p=0.839).
+
+#### The finding that matters more than the latency win
+
+**Reranking destroyed cross-document reasoning.** `Cov` fell `0.929 → 0.583` and `XDR`
+`0.452 → 0.106` at k=3. The mechanism is not the obvious one — 3 chunks could in
+principle cover 2 documents. Per question, **11 of the 14 cross-document questions
+landed at exactly `Cov = 0.50`**: one of two required documents present, three times
+over. The reranker filled every slot from the single most on-topic document.
+
+That is a structural limitation, not a tuning problem. **A cross-encoder scores each
+(query, chunk) pair independently, so it has no way to express a property of the
+selected *set*.** A cross-document question needs one passage from each required
+document; pointwise relevance ranks all the passages of the most relevant document
+above the best passage of the second. Even at constant prompt length the effect is
+visible: `hybrid-rerank-k8` halves XDR (`0.452 → 0.217`) while improving recall and MRR.
+
+So the honest summary is that reranking makes **single-passage** retrieval better and
+**cross-document** retrieval worse, and this corpus exists to measure the second thing.
+A 1.8x latency win that trades away the capability the benchmark is about is not a win
+here. What it would take to keep both: diversity-aware selection over the reranked pool
+(MMR, or a per-document quota) so that the top-k is chosen as a set rather than as k
+independent decisions. That is the next experiment this result argues for.
+
+It also corrects a prediction I committed to in advance. I expected reranking to move
+AF and CP more than `Cov`, "because `Cov` is already at its ceiling." AF and CP did move
+(`+0.137`, `+0.171`). But `Cov` moved too, downward and hard, because I reasoned about
+reranking at constant k and ignored how shrinking k interacts with document diversity.
+
+### Five scoring bugs this project has surfaced
 
 Every one was invisible until a real corpus and a real generator existed at the same
 time, which is the lesson `LEARNING.txt` records: a green suite can mean "nothing is
@@ -265,6 +328,27 @@ Both fixes were verified by reverting each and confirming the new tests fail
 (`assert 0.0 is None`; `Obtained: 1.0 / Expected: 0.0`), and the corrected re-run
 reproduced the previous one **answer-for-answer** — the only deltas in the whole report
 are the two mis-scored refusals, so nothing here is confounded with generation noise.
+
+**5. The paired latency column did not charge the reranker for its own cost.** The
+worst of the five, because it is the *same mistake* the interleaved ablation was built
+to prevent, repeated by the person who had just written the commit message about it.
+`QuestionRun.service_s` is a dataclass property summing retrieval + rerank +
+generation; `report._service_s` re-derives the same quantity from the serialized dict,
+and `rerank_s` was added to the first and not the second. So ~19s per query of real
+cross-encoder time vanished from the paired table.
+
+It was caught by reconciling the printed table against the JSON it was rendered from —
+`t_arm` read 27.21 where the record said `0.34 + 20.58 + 26.87`. Nothing looked wrong
+before that, and here is why: the omission flattered `hybrid-rerank-k3`, reporting it
+45.3s faster when it is 26.0s faster, **and** it concealed that `hybrid-rerank-k8` is
+19.0s *slower* on 29 of 30 questions at p=0.000 — that arm had read `-0.48s`,
+"not a result". A single bug produced one overstated win and one hidden significant
+loss, both pointing the way the author expected.
+
+The fix is not the one-line addition. `_SERVICE_FIELDS` is now an explicit tuple, and a
+test asserts it equals the set of timing stages `QuestionRun` records, so adding a
+future stage and forgetting the report fails the suite instead of understating a
+latency. Verified by reverting it: both new tests fail.
 
 ## Quickstart
 
