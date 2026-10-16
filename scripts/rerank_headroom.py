@@ -1,6 +1,7 @@
-"""Measure how much a reranker could possibly win, before building one.
+"""Measure how much a reranker could possibly win — and, with --apply, how much it did.
 
-    uv run python scripts/rerank_headroom.py
+    uv run python scripts/rerank_headroom.py              # ceiling only, no model
+    uv run python scripts/rerank_headroom.py --apply       # also run the cross-encoder
 
 A reranker sits between over-fetch and truncation: retrieval fuses `depth`
 candidates, the reranker reorders them, and the top `k` survive. So its ceiling is
@@ -20,7 +21,9 @@ number came back identical.
 
 from __future__ import annotations
 
+import argparse
 import sys
+from collections.abc import Sequence
 
 from mmu.config import get_settings
 from mmu.embed.bge_m3 import BgeM3Embedder
@@ -28,9 +31,20 @@ from mmu.eval.metrics import count_relevant_chunks, rank_metrics
 from mmu.eval.questions import load_questions
 from mmu.retrieve.build import load_index
 from mmu.retrieve.hybrid import HybridRetriever
+from mmu.retrieve.registry import build_reranker
+from mmu.retrieve.rerank import rerank as rerank_result
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--apply", action="store_true",
+        help="also run the real cross-encoder over each pool and report the recall it "
+             "actually achieved against the ceiling (downloads ~2.3GB on first use)",
+    )
+    parser.add_argument("--rerank-alias", default="default")
+    args = parser.parse_args(argv)
+
     settings = get_settings()
     questions = [q for q in load_questions(settings.questions_path) if q.relevant_doc_ids]
     if not questions:
@@ -46,6 +60,10 @@ def main() -> int:
     retriever = HybridRetriever(store, dense, sparse, embedder)
     corpus = [(c.doc_id, c.text) for c in store.chunks]
 
+    reranker = build_reranker(settings, args.rerank_alias) if args.apply else None
+    if reranker is not None:
+        print(f"applying reranker: {reranker.name}\n")
+
     k, depth = settings.top_k, 32
     small_k = 3
 
@@ -57,12 +75,16 @@ def main() -> int:
     )
     head = (
         f"{'question':<18}{'Nrel':>5}{f'R@{small_k}':>7}{f'R@{k}':>7}"
-        f"{f'R@{depth}':>7}{'1st':>5}{f'MRR@{k}':>8}  headroom"
+        f"{f'R@{depth}':>7}{'1st':>5}{f'MRR@{k}':>8}"
     )
+    if reranker is not None:
+        head += f"{'|':>3}{f'rrR@{small_k}':>8}{f'rrR@{k}':>8}{f'rrMRR@{k}':>10}"
+    head += "  headroom"
     print(head)
     print("-" * len(head))
 
     agg: dict[int, list[float]] = {small_k: [], k: [], depth: []}
+    rr_agg: dict[str, list[float]] = {"r3": [], "r8": [], "mrr8": []}
     rescuable: list[tuple[str, int]] = []
     partial: list[str] = []
     saturated: list[str] = []
@@ -96,11 +118,24 @@ def main() -> int:
             note = f"none — k={k} already holds all of it"
             saturated.append(q.id)
 
-        print(
+        row = (
             f"{q.id:<18}{n_rel:>5}{m[small_k].recall:>7.3f}{m[k].recall:>7.3f}"
             f"{m[depth].recall:>7.3f}{(first if first else '-'):>5}"
-            f"{m[k].mrr:>8.3f}  {note}"
+            f"{m[k].mrr:>8.3f}"
         )
+        if reranker is not None:
+            # The reranker reorders the SAME pool, so this is strictly a measurement of
+            # ordering: nothing enters or leaves, only the top-k selection changes.
+            reordered = rerank_result(result, reranker, k=depth)
+            rr = {cut: rank_metrics(reordered.chunks, k=cut, **kw) for cut in (small_k, k)}
+            rr_agg["r3"].append(rr[small_k].recall or 0.0)
+            rr_agg["r8"].append(rr[k].recall or 0.0)
+            rr_agg["mrr8"].append(rr[k].mrr)
+            row += (
+                f"{'|':>3}{rr[small_k].recall:>8.3f}{rr[k].recall:>8.3f}"
+                f"{rr[k].mrr:>10.3f}"
+            )
+        print(row + f"  {note}")
 
     n = len(questions)
     print()
@@ -122,6 +157,19 @@ def main() -> int:
     print(f"  partial at k={k} with more reachable               : {len(partial)}")
     print(f"  already saturated at k={k}                         : {len(saturated)}")
     print()
+    if reranker is not None:
+        print()
+        print("  WITH THE REAL CROSS-ENCODER (same pool, reordered):")
+        print(f"    mean recall@{small_k:<3} {sum(rr_agg['r3']) / n:.3f}   "
+              f"(was {sum(agg[small_k]) / n:.3f})")
+        print(f"    mean recall@{k:<3} {sum(rr_agg['r8']) / n:.3f}   "
+              f"(was {base:.3f}, ceiling {ceiling:.3f})")
+        print(f"    mean MRR@{k:<6} {sum(rr_agg['mrr8']) / n:.3f}")
+        achieved = sum(rr_agg['r8']) / n
+        if ceiling > base:
+            print(f"    captured {(achieved - base) / (ceiling - base) * 100:.0f}% of the "
+                  f"available headroom at k={k}")
+        print()
     print("A reranker cannot recover anything outside the pool. Raising `depth` is the")
     print("lever for that, and it is free at retrieval time but costs the reranker a")
     print("linear number of cross-encoder forward passes.")
@@ -129,4 +177,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

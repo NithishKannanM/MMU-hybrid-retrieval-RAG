@@ -402,6 +402,87 @@ time — a span straddling a chunk boundary is present in the document and prese
 chunk, so context precision would divide by zero relevant chunks and report a
 confidently wrong number without raising anything.
 
+### Reranking, and measuring its ceiling before building it
+
+A reranker is the one retrieval change in this project with a *measured* case for it,
+and establishing that case first is the point of `scripts/rerank_headroom.py`
+(`make headroom`). It loads the real index, runs no generator and no judge, and reports
+what reordering could win.
+
+**Why a second model at all.** BGE-M3 is a **bi-encoder**: it embeds the query and each
+chunk independently, so chunk vectors are computed once at index time and a query costs
+one embedding plus a cheap similarity sweep. That is what makes it an *index* —
+precompute, then look up. BGE-reranker-v2-m3 is a **cross-encoder**: it takes the *pair*,
+query and chunk concatenated into one input, and runs the full transformer over both
+together, so attention can relate "notification deadline" in the question directly to
+"72 hours" in the text. Nothing can be precomputed, because the chunk's representation
+now depends on which query is asking. It is a predicate that cannot be indexed, and can
+only be evaluated by scanning.
+
+That forces the two-stage shape: the cheap index narrows 378 chunks to a pool of
+`depth` candidates, optimising for *recall*; the expensive model reorders only those,
+optimising for *precision*. It is an index scan followed by a filter no index can serve.
+And it is why the bi-encoder is weaker on its own — it must compress a chunk into one
+vector *before it has ever seen the question*, so it cannot know which part matters.
+
+**The metrics already in this report cannot see any of that.** `coverage` is a set
+intersection over `doc_id`, so any permutation of the same chunks scores identically —
+a reranker cannot move it even in principle, and hybrid already reads 1.000. `CP` is
+rank-weighted but normalises over the relevant chunks it *retrieved*, so it grades the
+ordering of what was found and never the finding. Wiring up a 568M-parameter
+cross-encoder against those two would have produced a byte-identical report, which is
+the same failure as the four scoring bugs above: the metric cannot see the thing being
+built. So `recall@k`, `MRR` and `NDCG@k` went in first, with the denominator taken from
+the relevant chunks in the **corpus** rather than in the retrieved slice.
+
+**The ceiling, measured at k=8 and depth=32 over the 30-question set:**
+
+```
+mean recall@3   0.333     what reranking must preserve if the prompt shrinks to 3
+mean recall@8   0.469     production today
+mean recall@32  0.817     the reranker's ceiling at this depth
+```
+
+**+0.349 absolute, +74% relative, available purely by reordering candidates retrieval
+already fetched.** The reranker's ceiling is recall@depth, not recall@k, because it can
+only promote what the pool already holds — anything retrieval missed outright needs a
+larger `depth`, which is free at retrieval time and linear in cross-encoder passes. Both
+numbers are read off the *same* fusion, because RRF's output depends on pool size and
+prefixes of a depth-128 ranking are not the top of a depth-32 ranking.
+
+This corrected the expectation I started with. It is true that `coverage` cannot see a
+reranker, but it does not follow that there is little to win: coverage saturates because
+the required *documents* are present, and what is missing is the specific *passages*.
+Five questions have **nothing** relevant in the top 8 while the relevant chunk sits at
+fused rank 10, 11, 15, 16 or 19 — comfortably inside the pool. Among them `single-003`
+("how does the Regulation define personal data?"), a plain definitional lookup against
+Article 4(1), and `single-008`, the German 20-person DPO threshold, at rank 19.
+
+Those five failures were **invisible to the 6-question set**, where every question
+retrieved something relevant. Expanding the corpus did not only buy statistical power;
+it immediately surfaced real retrieval failures, which is the better argument for having
+done it.
+
+**The experiment is three arms, not two** (`mmu eval ablate --rerank`):
+
+| arm | k | rerank | what it isolates |
+|---|---|---|---|
+| `hybrid-k8` | 8 | — | the control: today's production configuration |
+| `hybrid-rerank-k8` | 8 | yes | quality at constant prompt length |
+| `hybrid-rerank-k3` | 3 | yes | whether it pays for itself |
+
+All three share `depth=32`. `Settings.resolved_depth` is `max(4k, 20)`, so leaving it
+unset would hand the k=3 arm a 20-candidate pool and the k=8 arms a 32-candidate one,
+and the arms would differ in two ways at once. Splitting quality from length matters
+because a single "rerank and shrink" arm that came back faster and worse could not say
+which change did which.
+
+`rerank_s` is its own field and `service_s` is now `retrieval + rerank + generate`. The
+cross-encoder is a real per-query cost, and a reranking arm's whole claim is that the
+shorter prompt it buys saves more generation time than the cross-encoder spends —
+unfalsifiable if the cost is hidden inside `retrieval_s`. Charging a cost to the wrong
+stage is exactly how this project once reported a 3x speedup that did not exist.
+
 ### The ablation is interleaved, and that is not a detail
 
 The ablation is the experiment that justifies the architecture:
