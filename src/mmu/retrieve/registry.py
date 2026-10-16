@@ -38,6 +38,58 @@ def available_rerankers() -> tuple[str, ...]:
     return tuple(sorted(_ALIASES)) + tuple(sorted(_DISABLED))
 
 
+#: alias -> a factory taking (settings, store, dense). Same alias-only discipline as
+#: the reranker table above, and the same reason: an arm names a strategy, never
+#: arbitrary parameters smuggled through on the wire.
+_SELECTORS: frozenset[str] = frozenset({"top-k", "mmr", "quota"})
+
+
+def available_selectors() -> tuple[str, ...]:
+    return tuple(sorted(_SELECTORS)) + tuple(sorted(_DISABLED))
+
+
+def build_selector(
+    settings: Settings,
+    alias: str | None = None,
+    *,
+    store=None,
+    dense=None,
+):
+    """Resolve ``alias`` to a context :class:`~mmu.retrieve.select.Selector`, or None.
+
+    ``mmr`` needs chunk-to-chunk similarity and therefore the store and dense index;
+    asking for it without them is an error rather than a silent fallback to a lexical
+    measure, because two arms differing in their notion of redundancy while sharing a
+    label would make the comparison meaningless.
+    """
+    if alias is None:
+        return None
+    key = alias.strip().lower()
+    if key in _DISABLED:
+        return None
+    if key not in _SELECTORS:
+        raise ValueError(
+            f"unknown selector alias {alias!r}; valid aliases are "
+            f"{', '.join(available_selectors())}"
+        )
+
+    from mmu.retrieve.select import DocQuotaSelector, MMRSelector, TopKSelector, embedding_similarity
+
+    if key == "top-k":
+        return TopKSelector()
+    if key == "quota":
+        return DocQuotaSelector(max_per_doc=settings.select_max_per_doc)
+    if store is None or dense is None:
+        raise ValueError(
+            "selector 'mmr' needs the chunk store and dense index to measure "
+            "redundancy between candidates; pass store= and dense="
+        )
+    return MMRSelector(
+        similarity=embedding_similarity(store, dense),
+        lambda_=settings.select_mmr_lambda,
+    )
+
+
 def build_reranker(settings: Settings, alias: str | None = None) -> Reranker | None:
     """Resolve ``alias`` to a reranker, or ``None`` for an unreranked arm.
 

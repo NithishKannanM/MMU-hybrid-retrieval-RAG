@@ -265,7 +265,10 @@ async def test_run_interleaved_applies_the_reranker_and_charges_it_separately(
     assert all(r.rerank_s > 0.0 for r in reranked.runs)
     # And the cost is counted in service_s, which is what the paired latency test uses.
     for r in reranked.runs:
-        assert r.service_s == pytest.approx(r.retrieval_s + r.rerank_s + r.generate_s)
+        assert r.service_s == pytest.approx(
+            r.retrieval_s + r.rerank_s + r.select_s + r.generate_s
+        )
+        assert r.service_s < r.latency_s  # judging is excluded, and there was some
 
 
 async def test_a_reranked_arm_records_its_own_k_not_the_run_default(
@@ -403,10 +406,17 @@ def test_report_service_time_matches_the_runner_field_by_field() -> None:
     for field in _SERVICE_FIELDS:
         assert field in serialized, field
 
-    # And every nonzero timing stage the runner records must be in the report's sum.
-    stages = {"retrieval_s", "rerank_s", "generate_s"}
+    # And the report's sum must cover every timing stage QuestionRun records. DERIVED
+    # from the dataclass rather than written out: a hardcoded set is only a restatement
+    # of _SERVICE_FIELDS and would pass while a newly-added stage went uncounted, which
+    # is precisely what happened when `select_s` was introduced.
+    stages = {
+        name for name in QuestionRun.__dataclass_fields__
+        if name.endswith("_s") and name != "latency_s"
+    }
     assert stages == set(_SERVICE_FIELDS), (
-        "a timing stage exists on QuestionRun that the paired latency column ignores"
+        f"timing stage(s) on QuestionRun that the paired latency column ignores: "
+        f"{sorted(stages - set(_SERVICE_FIELDS))}"
     )
 
 

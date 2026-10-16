@@ -146,6 +146,17 @@ class Settings(BaseSettings):
     #: attention for text the pair does not contain.
     rerank_max_length: int = 512
 
+    # --- context selection ----------------------------------------------------------
+    #: MMR's relevance/novelty trade-off. 1.0 is exactly top-k, 0.0 ignores relevance.
+    #: **Not tuned.** Tuning it against the same 30 questions used to evaluate it would
+    #: be fitting the test set, so it sits at the midpoint until there is a held-out
+    #: set to tune against.
+    select_mmr_lambda: float = 0.5
+    #: Hard cap on chunks per document for the quota selector. None derives
+    #: ceil(k / documents in the pool) — 1 per document at k=3 over this 3-document
+    #: corpus, which is what the measured Cov=0.50 failures call for.
+    select_max_per_doc: int | None = None
+
     #: Bounds concurrent retrievals. NOT redundant with asyncio.to_thread: to_thread
     #: keeps the event loop responsive but does not bound parallelism, so N in-flight
     #: requests become N threads contending for the same cores. See api/deps.py.

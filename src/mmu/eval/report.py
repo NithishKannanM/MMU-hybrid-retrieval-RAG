@@ -66,6 +66,7 @@ def render(report: RunReport, *, verbose: bool = False) -> str:
             if report.rerank
             else "   rerank=none"
         )
+        + f"   select={report.select or 'top-k (truncate)'}"
     )
     lines.append(
         f"judge: {report.judge}   model: {report.model}   embed: {report.embed_model or 'n/a'}"
@@ -152,6 +153,21 @@ def render(report: RunReport, *, verbose: bool = False) -> str:
     lines.append(f"{'CUR attributed':<22}{report.cur_attr:>8.3f}   verified spans / k{span_note}")
     lines.append(f"{'CUR tokens':<22}{report.cur_tok:>8.3f}   verified chars / context chars{span_note}")
     lines.append(f"{'  citation-theater gap':<22}{report.cur_gap:>8.3f}   cited but never verified{span_note}")
+    lines.append("")
+    if report.slices:
+        lines.append("")
+        lines.append("by question slice (a change that helps one population at another's expense")
+        lines.append("shows up here, and nowhere else in this report):")
+        lines.append(f"  {'slice':<18}{'n':>4}{'AF':>8}{'CP':>8}{'MRR':>8}{'recall':>8}")
+        for name in ("all", "cross_document", "single_document", "unanswerable"):
+            row = report.slices.get(name)
+            if row is None:
+                continue
+            cells = "".join(
+                f"{'n/a':>8}" if row.get(key) is None else f"{row[key]:>8.3f}"
+                for key in ("af", "cp", "mrr", "recall")
+            )
+            lines.append(f"  {name:<18}{int(row['n']):>4}{cells}")
     lines.append("")
     lines.append(f"{'LpQU (corpus)':<22}{report.corpus_lpqu:>8.2f}   seconds per quality unit, SUM(t)/SUM(Q)")
     lines.append(f"{'  p50 latency':<22}{report.p50_latency_s:>8.2f}s")
@@ -243,7 +259,7 @@ def _mrr(run: dict) -> float | None:
 #: latency column — which is exactly what happened when `rerank_s` was introduced: the
 #: cross-encoder's ~19s per query was omitted from the paired table, and a reranked arm
 #: that was genuinely faster was reported as faster by 45s instead of its real 26s.
-_SERVICE_FIELDS: tuple[str, ...] = ("retrieval_s", "rerank_s", "generate_s")
+_SERVICE_FIELDS: tuple[str, ...] = ("retrieval_s", "rerank_s", "select_s", "generate_s")
 
 
 def _service_s(run: dict) -> float:

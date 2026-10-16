@@ -44,5 +44,13 @@ ablate-rerank:   ## the reranking experiment (3 arms x every question, interleav
 # 3 answers per question on CPU -- budget hours, not minutes.
 	uv run mmu eval ablate --rerank --judge local --out-dir reports/rerank --verbose
 
+ablate-select:   ## diversity selection: does it restore coverage without losing the latency win?
+# hybrid-k8 (reference) / rerank-k3 (the regression) / mmr-k3 / quota-k3, all over the same
+# 32-candidate pool with the same reranker, so the ONLY thing varying across the three k=3
+# arms is the selection policy. Answers the question reports/rerank/ raised: reranking won
+# 1.8x on latency (p=0.000) and broke cross-document reasoning (Cov 0.929 -> 0.583).
+# 4 arms x 30 questions = 120 CPU generations; budget 2+ hours.
+	uv run mmu eval ablate --select --judge local --out-dir reports/select --verbose
+
 clean:
 	rm -rf data/.index data/.cache reports/*.json

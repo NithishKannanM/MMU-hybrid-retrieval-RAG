@@ -106,6 +106,11 @@ class Timings:
     #: shorter prompt it enables saves more than this. Charging it to the wrong stage is
     #: how the project previously reported a 3x speedup that did not exist.
     rerank_ms: float = 0.0
+    #: Context selection (MMR / document quota) over the reranked pool. Cheap by
+    #: construction — a few hundred similarity lookups against vectors already in the
+    #: index — but measured rather than assumed, because the one thing this project has
+    #: learned twice is that an unmeasured stage ends up charged to the wrong one.
+    select_ms: float = 0.0
     generate_ms: float = 0.0
     total_ms: float = 0.0
 

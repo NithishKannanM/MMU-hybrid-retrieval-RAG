@@ -37,6 +37,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from collections.abc import Sequence
+
 import numpy as np
 
 #: How far a stored vector's L2 norm may drift from 1.0 before we refuse it. Loose
@@ -87,6 +89,29 @@ class FlatIPIndex:
                 f"worst deviation {worst:.4g} exceeds {_NORM_TOLERANCE}"
             )
         self._index.add(vectors)
+
+    def vectors_for(self, rows: Sequence[int]) -> np.ndarray:
+        """Reconstruct the stored vectors for ``rows``, as an ``(len(rows), dim)`` array.
+
+        Exists for chunk-to-chunk similarity (MMR needs to know how redundant two
+        candidates are with each other, not just how relevant each is to the query).
+        :meth:`add` already guarantees every stored vector is L2-normalized — it raises
+        rather than warns otherwise — so a plain dot product between two reconstructed
+        rows *is* their cosine, with no renormalization needed here.
+
+        ``IndexFlatIP`` stores vectors verbatim, so this is a lookup rather than an
+        approximation. An approximate index swapped in at the seam in :meth:`_make_index`
+        would need `reconstruct` support, which is the one extra requirement this method
+        adds to that swap.
+        """
+        if not rows:
+            return np.zeros((0, self._dim), dtype=np.float32)
+        out = np.empty((len(rows), self._dim), dtype=np.float32)
+        for position, row in enumerate(rows):
+            if not 0 <= row < self.size:
+                raise IndexError(f"row {row} out of range for index of size {self.size}")
+            out[position] = self._index.reconstruct(int(row))
+        return out
 
     def search(self, query: np.ndarray, k: int) -> list[tuple[int, float]]:
         """Return up to ``k`` ``(row, score)`` pairs, best first."""

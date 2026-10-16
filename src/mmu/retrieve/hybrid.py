@@ -61,6 +61,16 @@ class HybridRetriever:
     def store(self) -> ChunkStore:
         return self._store
 
+    @property
+    def dense(self) -> DenseIndex:
+        """The dense index, for callers needing chunk *vectors* rather than a search.
+
+        MMR is the reason: measuring redundancy between two candidates means comparing
+        their embeddings, and those were already computed at index time. Exposed
+        read-only so a selector can reuse them instead of loading the embedder again.
+        """
+        return self._dense
+
     def search(
         self,
         query: str,

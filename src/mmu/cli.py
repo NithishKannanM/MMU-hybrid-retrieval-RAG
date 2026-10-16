@@ -231,6 +231,7 @@ def _parse_arm(spec: str):
         )
 
     rerank: str | None = None
+    select: str | None = None
     k: int | None = None
     depth: int | None = None
     for option in options:
@@ -240,6 +241,8 @@ def _parse_arm(spec: str):
             raise ValueError(f"--arm option {option!r} needs a value, in {spec!r}")
         if name == "rerank":
             rerank = value
+        elif name == "select":
+            select = value
         elif name in ("k", "depth"):
             try:
                 number = int(value)
@@ -254,9 +257,9 @@ def _parse_arm(spec: str):
         else:
             raise ValueError(
                 f"unknown --arm option {name!r} in {spec!r}; "
-                f"valid options are rerank, k, depth"
+                f"valid options are rerank, select, k, depth"
             )
-    return Arm(label, chans, rerank=rerank, k=k, depth=depth)
+    return Arm(label, chans, rerank=rerank, select=select, k=k, depth=depth)
 
 
 def cmd_eval_ablate(args) -> int:
@@ -271,7 +274,7 @@ def cmd_eval_ablate(args) -> int:
     """
     from mmu.eval import report as report_mod
     from mmu.eval.questions import load_questions
-    from mmu.eval.runner import DEFAULT_ARMS, RERANK_ARMS, run_interleaved
+    from mmu.eval.runner import DEFAULT_ARMS, RERANK_ARMS, SELECT_ARMS, run_interleaved
     from mmu.generate.registry import build_generator
     from mmu.retrieve.build import load_index
     from mmu.retrieve.hybrid import HybridRetriever
@@ -280,6 +283,8 @@ def cmd_eval_ablate(args) -> int:
     try:
         if args.arm:
             arms = tuple(_parse_arm(a) for a in args.arm)
+        elif getattr(args, "select", False):
+            arms = SELECT_ARMS
         elif getattr(args, "rerank", False):
             arms = RERANK_ARMS
         else:
@@ -408,6 +413,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--rerank", action="store_true",
         help="use the reranking cohort (hybrid-k8 / hybrid-rerank-k8 / hybrid-rerank-k3) "
              "instead of the channel ablation; ignored when --arm is given",
+    )
+    ablate.add_argument(
+        "--select", action="store_true",
+        help="use the diversity-selection cohort (hybrid-k8 / rerank-k3 / mmr-k3 / "
+             "quota-k3); ignored when --arm is given",
     )
     ablate.add_argument("--verbose", "-v", action="store_true")
     ablate.set_defaults(func=cmd_eval_ablate)

@@ -26,8 +26,9 @@ from mmu.core.models import RetrievedChunk
 from mmu.eval import metrics
 from mmu.eval.judge import CachingJudge, Judge
 from mmu.eval.metrics import ClaimVerification, CURResult, RankMetrics, XDRResult
-from mmu.retrieve.registry import build_reranker
+from mmu.retrieve.registry import build_reranker, build_selector
 from mmu.retrieve.rerank import Reranker, rerank as rerank_result
+from mmu.retrieve.select import Selector, TopKSelector, apply as apply_selector
 from mmu.eval.questions import Question
 from mmu.generate.base import Generator, GeneratorUnavailable
 from mmu.generate.prompt import (
@@ -76,6 +77,8 @@ class QuestionRun:
     #: prompt it buys saves more generation time than the cross-encoder costs — and that
     #: claim is unfalsifiable if the cost is hidden inside `retrieval_s`.
     rerank_s: float = 0.0
+    #: Context-selection time (MMR / quota), 0.0 when no selection stage ran.
+    select_s: float = 0.0
     degraded_claims: int = 0
     invented_spans: int = 0
     error: str | None = None
@@ -106,7 +109,7 @@ class QuestionRun:
         comparison must use, and it is also the only part of the two that a served
         request would actually pay.
         """
-        return self.retrieval_s + self.rerank_s + self.generate_s
+        return self.retrieval_s + self.rerank_s + self.select_s + self.generate_s
 
 
 @dataclass
@@ -143,6 +146,10 @@ class RunReport:
     #: agree about it, and a reranked run that does not say so is a result with its
     #: cause missing.
     rerank: str = ""
+    #: The context-selection policy this arm used, or "" for plain truncation. Part of
+    #: the configuration: two arms with the same k and the same reranker are still not
+    #: comparable if they chose their k differently.
+    select: str = ""
     #: Candidate pool the reranker reordered. Meaningless without `rerank`, and recorded
     #: because the reranker's ceiling is recall@depth — a reranked arm's result cannot be
     #: interpreted without knowing how much it was allowed to see.
@@ -171,6 +178,17 @@ class RunReport:
     #: ``mean_recall`` is a mean of per-question recalls whose denominators differ, so
     #: it is a summary of this run and **not** comparable across question sets; the
     #: paired per-question deltas in ``report.render_paired`` are the comparable form.
+    #: Per-slice means, keyed by slice name: ``all``, ``cross_document``,
+    #: ``single_document``, ``unanswerable``. Every arm reports every slice.
+    #:
+    #: This exists because the headline columns silently mix two populations:
+    #: ``Cov``/``Cite``/``Syn``/``XDR`` average over cross-document questions *only*,
+    #: while ``af``/``cp``/``mrr`` average over everything. A change that helps one
+    #: population at the other's expense therefore shows up as a wash in some columns
+    #: and a win in others, with nothing saying so. Reporting the slices side by side is
+    #: the cheapest defence against optimising a subset — which is a live risk here,
+    #: since the diversity selectors are aimed squarely at the cross-document slice.
+    slices: dict[str, dict[str, float | None]] = field(default_factory=dict)
     mrr: float | None = None
     mrr_n: int = 0
     mean_recall: float | None = None
@@ -236,6 +254,7 @@ async def run_question(
     n_relevant_total: int | None = None,
     reranker: Reranker | None = None,
     rerank_depth: int | None = None,
+    selector: Selector | None = None,
 ) -> QuestionRun:
     started = time.perf_counter()
     if cache_path is not None:
@@ -243,15 +262,20 @@ async def run_question(
 
     # to_thread for the same reason the API does it: search is CPU-bound and blocking,
     # and the judge calls interleaved with it are network I/O that should not be stalled.
-    # With a reranker, retrieval fetches the *candidate pool* and the reranker decides
-    # which k survive. Without one, it fetches k directly. `fetch_k` is therefore the
-    # pool size, not the context size, and the two are only equal in the unreranked arm.
-    fetch_k = k if reranker is None else (rerank_depth or retriever_depth(settings, k))
+    # Three stages, and which of them run decides how much retrieval must fetch:
+    #
+    #     fuse `depth` candidates -> rerank (pointwise) -> select k (set-aware) -> prompt
+    #
+    # A reranker or a selector needs the whole candidate *pool*; with neither, retrieval
+    # fetches exactly the k that reach the prompt. `fetch_k` is therefore the pool size,
+    # and equals the context size only in the plain arm.
+    needs_pool = reranker is not None or selector is not None
+    fetch_k = (rerank_depth or retriever_depth(settings, k)) if needs_pool else k
     result = await asyncio.to_thread(
         retriever.search,
         question.question,
         k=fetch_k,
-        depth=fetch_k if reranker is not None else None,
+        depth=fetch_k if needs_pool else None,
         channels=list(channels),
         rrf_k=rrf_k,
     )
@@ -259,8 +283,21 @@ async def run_question(
 
     rerank_s = 0.0
     if reranker is not None:
-        result = await asyncio.to_thread(rerank_result, result, reranker, k=k)
+        # Reorders the pool without truncating — choosing k is the selector's job, so
+        # that "which k" is one decision made in one place rather than a side effect of
+        # two stages.
+        result = await asyncio.to_thread(rerank_result, result, reranker, k=fetch_k)
         rerank_s = result.timings.rerank_ms / 1000
+
+    select_s = 0.0
+    if needs_pool:
+        # `TopKSelector` when an arm reranks but states no selector: keeping the
+        # reranker's order is itself a selection policy, and routing it through the same
+        # stage keeps the control and the diversity arms on one code path.
+        result = await asyncio.to_thread(
+            apply_selector, result, selector or TopKSelector(), k=k
+        )
+        select_s = result.timings.select_ms / 1000
 
     t = time.perf_counter()
     try:
@@ -408,6 +445,7 @@ async def run_question(
         n_claims=len(claims),
         n_supported=sum(1 for c in claims if c.supported),
         rerank_s=rerank_s,
+        select_s=select_s,
         degraded_claims=degraded,
         invented_spans=invented,
         error=error,
@@ -509,6 +547,11 @@ class Arm:
     label: str
     channels: tuple[str, ...]
     rerank: str | None = None
+    #: Context-selection alias (``top-k`` / ``mmr`` / ``quota``), applied *after*
+    #: reranking. ``None`` means plain truncation, which is `top-k` by another name —
+    #: stating it explicitly is preferred, so the report prints a policy rather than a
+    #: blank.
+    select: str | None = None
     k: int | None = None
     depth: int | None = None
 
@@ -539,6 +582,29 @@ RERANK_ARMS: tuple[Arm, ...] = (
     Arm("hybrid-k8", ("dense", "sparse"), k=8, depth=32),
     Arm("hybrid-rerank-k8", ("dense", "sparse"), rerank="default", k=8, depth=32),
     Arm("hybrid-rerank-k3", ("dense", "sparse"), rerank="default", k=3, depth=32),
+)
+
+#: The diversity-selection cohort, answering the question `RERANK_ARMS` raised:
+#: reranking bought a significant 1.8x latency win and broke cross-document reasoning
+#: (Cov 0.929 -> 0.583, XDR 0.452 -> 0.106, with 11 of 14 cross-document questions at
+#: exactly Cov=0.50 because the reranker filled all three slots from one document).
+#:
+#: - ``hybrid-k8``  — the production reference, and the coverage number to recover.
+#: - ``rerank-k3``  — the regression itself, reproduced in this cohort so the diversity
+#:   arms are paired against it rather than against a number from a previous run.
+#: - ``mmr-k3``     — penalise redundancy. General; knows nothing about documents.
+#: - ``quota-k3``   — cap chunks per document. Targeted at the measured failure.
+#:
+#: Both selectors are included because they fail differently: MMR can diversify
+#: *within* one document and still return three chunks from it, while the quota cannot
+#: tell that two passages from one document are near-identical. All four share
+#: ``depth=32``, and the three k=3 arms share the same reranker, so the only thing that
+#: varies across them is the selection policy.
+SELECT_ARMS: tuple[Arm, ...] = (
+    Arm("hybrid-k8", ("dense", "sparse"), k=8, depth=32),
+    Arm("rerank-k3", ("dense", "sparse"), rerank="default", select="top-k", k=3, depth=32),
+    Arm("mmr-k3", ("dense", "sparse"), rerank="default", select="mmr", k=3, depth=32),
+    Arm("quota-k3", ("dense", "sparse"), rerank="default", select="quota", k=3, depth=32),
 )
 
 
@@ -611,6 +677,7 @@ async def run_interleaved(
             arm_label=arm.label,
             interleaved_with=cohort,
             rerank=arm.rerank or "",
+            select=arm.select or "",
             rerank_depth=(arm.depth or 0) if arm.rerank else 0,
         )
         for arm in arms
@@ -625,6 +692,15 @@ async def run_interleaved(
     for arm in arms:
         if arm.rerank not in rerankers:
             rerankers[arm.rerank] = build_reranker(settings, arm.rerank)
+    # Selectors are cheap to build but share a per-chunk vector cache inside
+    # `embedding_similarity`, so one instance per alias also means the cache survives
+    # across questions instead of being rebuilt 30 times.
+    selectors: dict[str | None, object] = {}
+    for arm in arms:
+        if arm.select not in selectors:
+            selectors[arm.select] = build_selector(
+                settings, arm.select, store=retriever.store, dense=retriever.dense
+            )
 
     for i, question in enumerate(questions):
         shift = i % len(arms)
@@ -637,6 +713,7 @@ async def run_interleaved(
                 n_relevant_total=n_relevant.get(question.id),
                 reranker=rerankers[arm.rerank],
                 rerank_depth=arm.depth,
+                selector=selectors[arm.select],
             )
             run = replace(run, arm_label=arm.label, arm_index=position)
             reports[arm.label].runs.append(run)
@@ -646,6 +723,46 @@ async def run_interleaved(
     for report in reports.values():
         _aggregate(report)
     return reports
+
+
+def _slice_means(runs: Sequence[QuestionRun]) -> dict[str, dict[str, float | None]]:
+    """Mean AF / CP / MRR / recall for each question population, plus its size.
+
+    A metric that is undefined for a question is *excluded* from that slice's mean
+    rather than counted as zero, which is why every entry carries its own ``n``: `cp`
+    is undefined for an unanswerable question and `recall` wherever the corpus-wide
+    relevant count was unavailable, so the three means in one slice can legitimately
+    rest on three different denominators.
+    """
+    def mean(values: Sequence[float]) -> float | None:
+        return (sum(values) / len(values)) if values else None
+
+    groups: dict[str, list[QuestionRun]] = {"all": list(runs)}
+    # `xdr is not None` rather than `answer_type == "cross_document"`: the operative
+    # contract is `len(required_doc_ids) >= 2` (see `Question.is_cross_document`), and
+    # the runner already resolved it when deciding whether to compute XDR. Keying the
+    # slice off the same condition means this table can never disagree with the XDR
+    # column about which questions are cross-document.
+    groups["cross_document"] = [r for r in runs if r.xdr is not None]
+    groups["single_document"] = [
+        r for r in runs if r.xdr is None and r.answer_type == "single_document"
+    ]
+    groups["unanswerable"] = [r for r in runs if r.answer_type == "unanswerable"]
+
+    out: dict[str, dict[str, float | None]] = {}
+    for name, group in groups.items():
+        if not group:
+            continue
+        out[name] = {
+            "n": float(len(group)),
+            "af": mean([r.af for r in group]),
+            "cp": mean([r.cp for r in group if r.cp is not None]),
+            "mrr": mean([r.rank.mrr for r in group if r.rank is not None]),
+            "recall": mean(
+                [r.rank.recall for r in group if r.rank is not None and r.rank.recall is not None]
+            ),
+        }
+    return out
 
 
 def _aggregate(report: RunReport) -> None:
@@ -677,6 +794,8 @@ def _aggregate(report: RunReport) -> None:
     report.corpus_lpqu = lpqu.corpus_lpqu
     report.p50_latency_s = lpqu.p50_latency_s
     report.p95_latency_s = lpqu.p95_latency_s
+
+    report.slices = _slice_means(runs)
 
     ranked = [r.rank for r in runs if r.rank is not None]
     report.mrr_n = len(ranked)
