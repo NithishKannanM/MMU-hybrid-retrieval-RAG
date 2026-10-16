@@ -10,18 +10,25 @@ what the new metrics do instead.
 
 from __future__ import annotations
 
+import json
 import math
 
 import pytest
 
+from mmu.config import Settings
+from mmu.eval.judge import LocalJudge
 from mmu.eval.metrics import (
     context_precision,
     count_relevant_chunks,
     cross_document_reasoning,
     rank_metrics,
 )
+from mmu.eval.questions import load_questions
+from mmu.eval.runner import relevant_chunk_counts, run_eval
+from mmu.retrieve.hybrid import HybridRetriever
 
-from .conftest import make_chunk, make_retrieved
+from .conftest import FakeGenerator, make_chunk, make_retrieved
+from .test_e2e import QUESTIONS, built  # noqa: F401  (`built` is a fixture)
 
 _SPAN = "not later than 72 hours"
 _MUST = {"gdpr": [_SPAN]}
@@ -253,3 +260,86 @@ def test_cp_and_rank_metrics_disagree_on_purpose() -> None:
     m = rank_metrics(ctx, relevant_doc_ids={"gdpr"}, must_contain=_MUST, n_relevant_total=5)
     assert cp == pytest.approx(1.0)
     assert m.recall == pytest.approx(0.2)
+
+
+# ------------------------------------------------------- wiring through the runner
+
+
+async def test_the_runner_attaches_rank_metrics_with_a_corpus_denominator(
+    tmp_path, built
+) -> None:
+    """End-to-end: `run_eval` must compute the corpus-wide relevant count itself.
+
+    If it did not, `n_relevant_total` would arrive as None and recall/NDCG would be
+    None for every question — the metric would be present, reported, and permanently
+    undefined, which is the quietest possible way for this work to be useless.
+    """
+    embedder, _, store, dense, sparse, _ = built
+    retriever = HybridRetriever(store, dense, sparse, embedder)
+    path = tmp_path / "questions.jsonl"
+    path.write_text(QUESTIONS, encoding="utf-8")
+
+    report = await run_eval(
+        load_questions(path), retriever, FakeGenerator(), LocalJudge(),
+        Settings(data_dir=tmp_path), k=6, cache_path=tmp_path / "j.jsonl",
+    )
+
+    assert report.runs
+    for run in report.runs:
+        assert run.rank is not None, run.question_id
+        assert run.rank.n_relevant_total is not None and run.rank.n_relevant_total > 0
+        assert run.rank.recall is not None
+        assert run.rank.ndcg is not None
+
+    assert report.mrr is not None
+    assert report.mrr_n == len(report.runs)
+    assert report.mean_recall is not None
+    assert report.mean_ndcg is not None
+
+
+async def test_an_unanswerable_question_gets_no_rank_metrics_from_the_runner(
+    tmp_path, built
+) -> None:
+    """The counterpart: a question with no relevant set must come back with `rank=None`
+    and must not enter `mrr_n`, so it cannot drag the corpus mean toward zero."""
+    embedder, _, store, dense, sparse, _ = built
+    retriever = HybridRetriever(store, dense, sparse, embedder)
+    path = tmp_path / "questions.jsonl"
+    path.write_text(
+        QUESTIONS
+        + json.dumps(
+            {
+                "id": "unanswerable-x",
+                "question": "What is the deductible on our cyber-liability policy?",
+                "answer_type": "unanswerable",
+                "required_doc_ids": [],
+                "relevant_doc_ids": [],
+                "must_contain": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    report = await run_eval(
+        load_questions(path), retriever, FakeGenerator(), LocalJudge(),
+        Settings(data_dir=tmp_path), k=6, cache_path=tmp_path / "j.jsonl",
+    )
+
+    by_id = {r.question_id: r for r in report.runs}
+    assert by_id["unanswerable-x"].rank is None
+    assert report.mrr_n == len(report.runs) - 1
+
+
+async def test_relevant_chunk_counts_is_computed_once_and_skips_empty_sets(
+    tmp_path, built
+) -> None:
+    embedder, _, store, dense, sparse, _ = built
+    retriever = HybridRetriever(store, dense, sparse, embedder)
+    path = tmp_path / "questions.jsonl"
+    path.write_text(QUESTIONS, encoding="utf-8")
+    questions = load_questions(path)
+
+    counts = relevant_chunk_counts(questions, retriever)
+    assert set(counts) == {q.id for q in questions if q.relevant_doc_ids}
+    assert all(v > 0 for v in counts.values())

@@ -25,7 +25,7 @@ from mmu.config import Settings
 from mmu.core.models import RetrievedChunk
 from mmu.eval import metrics
 from mmu.eval.judge import CachingJudge, Judge
-from mmu.eval.metrics import ClaimVerification, CURResult, XDRResult
+from mmu.eval.metrics import ClaimVerification, CURResult, RankMetrics, XDRResult
 from mmu.eval.questions import Question
 from mmu.generate.base import Generator, GeneratorUnavailable
 from mmu.generate.prompt import (
@@ -79,6 +79,13 @@ class QuestionRun:
     #: counterbalancing auditable after the fact rather than merely asserted.
     arm_label: str = ""
     arm_index: int = 0
+    #: Rank-aware retrieval quality (:func:`metrics.rank_metrics`). ``None`` when the
+    #: question has no relevant set, exactly like :attr:`cp`. These are the only
+    #: retrieval metrics that can see a reranker: ``Cov`` is a set intersection and
+    #: ``cp`` normalises over what was retrieved, so both are invariant under the
+    #: reordering a reranker performs. ``recall`` and ``ndcg`` are additionally ``None``
+    #: when the corpus-wide relevant count could not be computed, rather than 0.0.
+    rank: RankMetrics | None = None
 
     @property
     def service_s(self) -> float:
@@ -141,6 +148,18 @@ class RunReport:
     corpus_lpqu: float = 0.0
     p50_latency_s: float = 0.0
     p95_latency_s: float = 0.0
+    #: Rank-aware retrieval means, over the questions where each is *defined*.
+    #: ``mrr`` is defined wherever there is a relevant set; ``recall``/``ndcg``
+    #: additionally need the corpus-wide relevant count, hence the separate ``n``.
+    #: ``None`` rather than 0.0 when nothing was measurable, like ``marker_compliance``.
+    #: ``mean_recall`` is a mean of per-question recalls whose denominators differ, so
+    #: it is a summary of this run and **not** comparable across question sets; the
+    #: paired per-question deltas in ``report.render_paired`` are the comparable form.
+    mrr: float | None = None
+    mrr_n: int = 0
+    mean_recall: float | None = None
+    mean_ndcg: float | None = None
+    rank_n: int = 0
     #: None when no answer was measurable; see :func:`metrics.marker_compliance_rate`.
     marker_compliance: float | None = 0.0
     #: Answers the rate was computed over — the corpus total minus correct refusals.
@@ -187,6 +206,7 @@ async def run_question(
     channels: Sequence[str],
     rrf_k: int,
     cache_path: Path | None = None,
+    n_relevant_total: int | None = None,
 ) -> QuestionRun:
     started = time.perf_counter()
     if cache_path is not None:
@@ -257,11 +277,22 @@ async def run_question(
         claims = ()
     af = metrics.answer_faithfulness(claims, refusal_is_correct=refusal_is_correct)
     cp: float | None = None
+    rank: RankMetrics | None = None
     if question.relevant_doc_ids:
         cp = metrics.context_precision(
             result.chunks,
             relevant_doc_ids=question.relevant_doc_ids,
             must_contain=question.must_contain,
+        )
+        # Same chunks, same relevance predicate, different question: `cp` grades the
+        # ordering of what was found, `rank` grades the finding against how much there
+        # was to find. `n_relevant_total` comes from the orchestrator because it is a
+        # property of the corpus, not of this retrieval.
+        rank = metrics.rank_metrics(
+            result.chunks,
+            relevant_doc_ids=question.relevant_doc_ids,
+            must_contain=question.must_contain,
+            n_relevant_total=n_relevant_total,
         )
 
     xdr: XDRResult | None = None
@@ -338,7 +369,30 @@ async def run_question(
         error=error,
         retrieved_doc_ids=tuple(sorted(retrieved_doc_ids)),
         cited_doc_ids=tuple(sorted(cited_doc_ids)),
+        rank=rank,
     )
+
+
+def relevant_chunk_counts(
+    questions: Sequence[Question], retriever: HybridRetriever
+) -> dict[str, int]:
+    """Per-question count of relevant chunks in the whole index — recall's denominator.
+
+    Computed once per run rather than once per question-arm: it depends only on the
+    question and the corpus, so recomputing it inside each arm would normalise 378 chunk
+    texts three times over for an identical answer. Questions with no relevant set are
+    omitted entirely, so :func:`metrics.rank_metrics` receives ``None`` for them and
+    reports recall and NDCG as undefined rather than zero.
+    """
+    corpus = [(c.doc_id, c.text) for c in retriever.store.chunks]
+    counts: dict[str, int] = {}
+    for q in questions:
+        if not q.relevant_doc_ids:
+            continue
+        counts[q.id] = metrics.count_relevant_chunks(
+            corpus, relevant_doc_ids=q.relevant_doc_ids, must_contain=q.must_contain
+        )
+    return counts
 
 
 async def run_eval(
@@ -377,10 +431,12 @@ async def run_eval(
         n_chunks=len(retriever.store),
     )
 
+    n_relevant = relevant_chunk_counts(questions, retriever)
     for question in questions:
         run = await run_question(
             question, retriever, generator, judge, settings,
             k=k, channels=channels, rrf_k=rrf_k, cache_path=cache_path,
+            n_relevant_total=n_relevant.get(question.id),
         )
         report.runs.append(run)
         if on_question is not None:
@@ -479,6 +535,7 @@ async def run_interleaved(
         for arm in arms
     }
 
+    n_relevant = relevant_chunk_counts(questions, retriever)
     for i, question in enumerate(questions):
         shift = i % len(arms)
         rotated = list(arms[shift:]) + list(arms[:shift])
@@ -486,6 +543,7 @@ async def run_interleaved(
             run = await run_question(
                 question, retriever, generator, judge, settings,
                 k=k, channels=arm.channels, rrf_k=rrf_k, cache_path=cache_path,
+                n_relevant_total=n_relevant.get(question.id),
             )
             run = replace(run, arm_label=arm.label, arm_index=position)
             reports[arm.label].runs.append(run)
@@ -526,6 +584,18 @@ def _aggregate(report: RunReport) -> None:
     report.corpus_lpqu = lpqu.corpus_lpqu
     report.p50_latency_s = lpqu.p50_latency_s
     report.p95_latency_s = lpqu.p95_latency_s
+
+    ranked = [r.rank for r in runs if r.rank is not None]
+    report.mrr_n = len(ranked)
+    report.mrr = (sum(x.mrr for x in ranked) / len(ranked)) if ranked else None
+    # recall/ndcg have a narrower denominator than mrr: both are None where the
+    # corpus-wide relevant count was unavailable, and averaging over a different set of
+    # questions than mrr is exactly why `rank_n` is reported separately from `mrr_n`.
+    recalls = [x.recall for x in ranked if x.recall is not None]
+    ndcgs = [x.ndcg for x in ranked if x.ndcg is not None]
+    report.rank_n = len(recalls)
+    report.mean_recall = (sum(recalls) / len(recalls)) if recalls else None
+    report.mean_ndcg = (sum(ndcgs) / len(ndcgs)) if ndcgs else None
 
     report.marker_compliance = metrics.marker_compliance_rate(
         [r.marker_compliance for r in runs]

@@ -117,6 +117,31 @@ def render(report: RunReport, *, verbose: bool = False) -> str:
         f"cross-document question(s)"
     )
     lines.append("")
+    if report.mrr is None:
+        lines.append(
+            f"{'MRR / NDCG / recall':<22}{'n/a':>8}   no question had a relevant set"
+        )
+    else:
+        lines.append(
+            f"{'MRR':<22}{report.mrr:>8.3f}   1/rank of first relevant chunk, "
+            f"n={report.mrr_n}"
+        )
+        if report.mean_ndcg is None:
+            lines.append(
+                f"{'  NDCG@k / recall@k':<22}{'n/a':>8}   corpus-wide relevant count "
+                f"unavailable, so both are undefined (not 0.0)"
+            )
+        else:
+            lines.append(
+                f"{'  NDCG@k':<22}{report.mean_ndcg:>8.3f}   vs. ideal ranking, "
+                f"n={report.rank_n}"
+            )
+            lines.append(
+                f"{'  recall@k':<22}{report.mean_recall:>8.3f}   relevant chunks found "
+                f"/ relevant in corpus  [per-run summary; denominators differ per "
+                f"question, so do NOT compare across question sets]"
+            )
+    lines.append("")
     span_note = " [n/a: local judge emits no spans]" if report.judge == "local" else ""
     lines.append(f"{'CUR cited':<22}{report.cur_cited:>8.3f}   markers emitted / k={report.k}")
     lines.append(f"{'CUR attributed':<22}{report.cur_attr:>8.3f}   verified spans / k{span_note}")
@@ -193,6 +218,18 @@ def render(report: RunReport, *, verbose: bool = False) -> str:
 
 def _runs_by_id(report: dict) -> dict[str, dict]:
     return {r["question_id"]: r for r in report.get("runs", [])}
+
+
+def _mrr(run: dict) -> float | None:
+    """MRR out of a serialized ``QuestionRun``, or None where it is undefined.
+
+    ``rank`` is ``None`` for a question with no relevant set, so this is not a
+    ``.get`` with a 0.0 default: a missing value and a measured zero mean different
+    things here, and conflating them is the bug class this project has already fixed
+    three times.
+    """
+    rank = run.get("rank")
+    return None if rank is None else rank.get("mrr")
 
 
 def _service_s(run: dict) -> float:
@@ -287,7 +324,7 @@ def render_paired(reports: Sequence[dict], labels: Sequence[str]) -> str:
         lines.append("")
         head = (
             f"{'question':<18}{'t_base':>8}{'t_arm':>8}{'dt':>9}"
-            f"{'AF_base':>9}{'AF_arm':>8}{'dAF':>7}{'dQ':>7}"
+            f"{'AF_base':>9}{'AF_arm':>8}{'dAF':>7}{'dQ':>7}{'dMRR':>8}"
         )
         lines.append(f"-- {label} vs {base_label}")
         lines.append(head)
@@ -296,16 +333,31 @@ def render_paired(reports: Sequence[dict], labels: Sequence[str]) -> str:
         dt: list[float] = []
         daf: list[float] = []
         dq: list[float] = []
+        dmrr: list[float] = []
         for qid in qids:
             b, a = base_runs[qid], arm_runs[qid]
             tb, ta = _service_s(b), _service_s(a)
             dt.append(ta - tb)
             daf.append(a["af"] - b["af"])
             dq.append(a["quality"] - b["quality"])
+            # MRR is undefined where the question has no relevant set, and that is a
+            # property of the question, so it is undefined for both arms at once. Such
+            # a pair is omitted from the delta list rather than entered as a 0.0 tie:
+            # a tie is dropped from n by the sign test anyway, but entering it would
+            # misreport `ties` as an observation about the arms.
+            mb, ma = _mrr(b), _mrr(a)
+            if mb is None or ma is None:
+                lines.append(
+                    f"{qid:<18}{tb:>8.2f}{ta:>8.2f}{_signed(ta - tb, 9)}"
+                    f"{b['af']:>9.2f}{a['af']:>8.2f}{_signed(a['af'] - b['af'], 7)}"
+                    f"{_signed(a['quality'] - b['quality'], 7)}{'n/a':>8}"
+                )
+                continue
+            dmrr.append(ma - mb)
             lines.append(
                 f"{qid:<18}{tb:>8.2f}{ta:>8.2f}{_signed(ta - tb, 9)}"
                 f"{b['af']:>9.2f}{a['af']:>8.2f}{_signed(a['af'] - b['af'], 7)}"
-                f"{_signed(a['quality'] - b['quality'], 7)}"
+                f"{_signed(a['quality'] - b['quality'], 7)}{_signed(ma - mb, 8)}"
             )
 
         lines.append("")
@@ -313,7 +365,11 @@ def render_paired(reports: Sequence[dict], labels: Sequence[str]) -> str:
             ("service latency", dt, LATENCY_TIE_S, "s"),
             ("Answer Faithfulness", daf, 0.0, ""),
             ("quality (composite)", dq, 0.0, ""),
+            ("MRR (retrieval rank)", dmrr, 0.0, ""),
         ):
+            if not deltas:
+                lines.append(f"{name:<22}not measurable on any paired question")
+                continue
             t = paired_sign_test(deltas, epsilon=eps)
             mean = sum(deltas) / len(deltas) if deltas else 0.0
             direction = (
